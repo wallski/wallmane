@@ -1,0 +1,10 @@
+<Solution>
+  <Configurations>
+    <Platform Name="ARM64" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="wallmane.vcxproj" Id="0b62457d-a6b1-4f30-8f66-7ca59ff8c7c8">
+    <Deploy />
+  </Project>
+</Solution>

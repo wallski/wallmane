@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="wallmane.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:wallmane"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Wallmane Launcher">
+
+    <Grid x:Name="RootGrid">
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- LAYER 0: Animated atmospheric background                    -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <Grid x:Name="BackgroundLayer">
+            <!-- Deep dark base gradient -->
+            <Rectangle>
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#080810" Offset="0"/>
+                        <GradientStop Color="#0D0D1A" Offset="0.5"/>
+                        <GradientStop Color="#050508" Offset="1"/>
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+
+            <!-- Composition Visuals Host (for 60fps native GPU rain) -->
+            <Border x:Name="CompositionHost" IsHitTestVisible="False"/>
+
+            <!-- Lightning flash overlay -->
+            <Rectangle x:Name="LightningFlash" IsHitTestVisible="False" Opacity="0">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.3,1">
+                        <GradientStop Color="#80AACCFF" Offset="0"/>
+                        <GradientStop Color="#00FFFFFF" Offset="1"/>
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+
+            <!-- Atmospheric fog / vignette -->
+            <Rectangle IsHitTestVisible="False">
+                <Rectangle.Fill>
+                    <RadialGradientBrush Center="0.5,0.5" RadiusX="0.7" RadiusY="0.7">
+                        <GradientStop Color="#00000000" Offset="0.3"/>
+                        <GradientStop Color="#CC000008" Offset="1"/>
+                    </RadialGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+        </Grid>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- LAYER 1: Main NavigationView                                -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- We add a top margin so the UI avoids the custom titlebar -->
+        <NavigationView
+            x:Name="NavView"
+            Margin="0,32,0,0"
+            PaneDisplayMode="LeftCompact"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="False"
+            SelectionChanged="NavView_SelectionChanged"
+            OpenPaneLength="200"
+            CompactPaneLength="48">
+
+            <NavigationView.MenuItems>
+                <NavigationViewItem Icon="Home" Content="Home" Tag="home_page" IsSelected="True"/>
+                <NavigationViewItem Icon="Library" Content="Addons" Tag="addons_page"/>
+                <NavigationViewItem Icon="Setting" Content="Settings" Tag="settings_page"/>
+            </NavigationView.MenuItems>
+
+            <!-- Main content area -->
+            <Grid x:Name="MainContent">
+
+                <!-- ─────────── HOME PAGE ─────────── -->
+                <Grid x:Name="HomePage" Visibility="Visible">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <Border Grid.Row="0" Background="#22C8993B" BorderBrush="#33C8993B" BorderThickness="0,0,0,1" Padding="20,14">
+                        <StackPanel Orientation="Vertical" Spacing="2">
+                            <TextBlock Text="WALLMANE" FontSize="22" FontWeight="Bold" Foreground="#C8993B"
+                                       CharacterSpacing="300"/>
+                            <TextBlock Text="WARMANE WOTLK LAUNCHER" FontSize="10" Foreground="#66C8993B"
+                                       CharacterSpacing="200"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- News + Realm Status -->
+                    <Grid Grid.Row="1" Margin="20,16,20,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- News Panel -->
+                        <Border Grid.Column="0" Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
+                                CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="NEWS" FontSize="11" Foreground="#C8993B" CharacterSpacing="300" FontWeight="Bold" Margin="0,0,0,10"/>
+                                <ScrollViewer x:Name="NewsScroll" VerticalScrollBarVisibility="Hidden">
+                                    <StackPanel x:Name="NewsPanel" Spacing="12"/>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Realm Status Panel -->
+                        <Border Grid.Column="2" Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
+                                CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="REALMS" FontSize="11" Foreground="#C8993B" CharacterSpacing="300" FontWeight="Bold" Margin="0,0,0,10"/>
+                                <StackPanel x:Name="RealmPanel" Spacing="10"/>
+                                <Rectangle Height="1" Margin="0,8" Opacity="0.2">
+                                    <Rectangle.Fill><SolidColorBrush Color="#C8993B"/></Rectangle.Fill>
+                                </Rectangle>
+                                <TextBlock x:Name="TotalPlayersLabel" Text="" Foreground="#88FFFFFF" FontSize="11"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- Play Button -->
+                    <Border Grid.Row="2" Margin="20,0,20,20" Padding="0">
+                        <Button x:Name="PlayButton" Click="PlayButton_Click"
+                                HorizontalAlignment="Right" HorizontalContentAlignment="Center"
+                                Width="220" Height="54">
+                            <Button.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#C8993B" Offset="0"/>
+                                    <GradientStop Color="#E8B84B" Offset="0.5"/>
+                                    <GradientStop Color="#C8993B" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Button.Background>
+                            <Button.BorderBrush>
+                                <SolidColorBrush Color="#FFD700"/>
+                            </Button.BorderBrush>
+                            <Button.BorderThickness>1</Button.BorderThickness>
+                            <TextBlock Text="PLAY WOW" FontSize="18" FontWeight="Bold"
+                                       Foreground="#1A0D00" CharacterSpacing="150"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                    </Border>
+                </Grid>
+
+                <!-- ─────────── ADDONS PAGE ─────────── -->
+                <Grid x:Name="AddonsPage" Visibility="Collapsed" Margin="24,20">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="ONE-CLICK ADDONS" FontSize="14" FontWeight="Bold"
+                                   Foreground="#C8993B" CharacterSpacing="300"/>
+                        <TextBlock Text="Essential WotLK 3.3.5a addons downloaded and installed automatically." Foreground="#88FFFFFF" FontSize="12"/>
+                        
+                        <!-- Addons Grid -->
+                        <ScrollViewer VerticalScrollBarVisibility="Hidden">
+                            <StackPanel x:Name="AddonsPanel" Spacing="12" Margin="0,10,0,0">
+                                <!-- Cards will be injected via C++ -->
+                            </StackPanel>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Grid>
+
+                <!-- ─────────── SETTINGS PAGE ─────────── -->
+                <Grid x:Name="SettingsPage" Visibility="Collapsed" Margin="24,20">
+                    <StackPanel Spacing="20" MaxWidth="480" HorizontalAlignment="Left">
+                        <TextBlock Text="SETTINGS" FontSize="14" FontWeight="Bold"
+                                   Foreground="#C8993B" CharacterSpacing="300"/>
+
+                        <!-- WoW Path -->
+                        <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
+                                CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="WOW INSTALLATION" FontSize="10" Foreground="#C8993B"
+                                           CharacterSpacing="200" FontWeight="Bold"/>
+                                <TextBlock Text="Path to your Wow.exe (WotLK 3.3.5a)" Foreground="#88FFFFFF" FontSize="12"/>
+                                <Grid ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="WowPathBox" Grid.Column="0" IsReadOnly="True"
+                                             Background="#22FFFFFF" BorderBrush="#44C8993B" Foreground="White"/>
+                                    <Button Content="Browse..." Grid.Column="1" Click="BrowseWowPath_Click"
+                                            Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Cache -->
+                        <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
+                                CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="MAINTENANCE" FontSize="10" Foreground="#C8993B"
+                                           CharacterSpacing="200" FontWeight="Bold"/>
+                                <TextBlock Text="Delete the WoW cache folder to fix most in-game issues." Foreground="#88FFFFFF" FontSize="12"/>
+                                <Button Content="Clear Cache" Click="ClearCache_Click"
+                                        Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- HD Models -->
+                        <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
+                                CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="HD CHARACTER MODELS" FontSize="10" Foreground="#C8993B"
+                                           CharacterSpacing="200" FontWeight="Bold"/>
+                                <TextBlock Text="Download Warlords of Draenor HD models for WotLK." Foreground="#88FFFFFF" FontSize="12"/>
+                                <Button x:Name="HDPatchButton" Content="Download HD Patch" Click="InstallHDPatch_Click"
+                                        Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Torrent -->
+                        <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
+                                CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="DON'T HAVE THE CLIENT?" FontSize="10" Foreground="#C8993B"
+                                           CharacterSpacing="200" FontWeight="Bold"/>
+                                <TextBlock Text="Download WotLK 3.3.5a via torrent, then set the path above." Foreground="#88FFFFFF" FontSize="12"/>
+                                <Button Content="📋  Copy Magnet Link" Click="CopyMagnet_Click"
+                                        Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- General Options -->
+                        <CheckBox x:Name="MinimizeOnPlayToggle" Content="Minimize Launcher when playing" Foreground="#88FFFFFF" FontSize="12" IsChecked="True"/>
+                    </StackPanel>
+                </Grid>
+
+            </Grid>
+        </NavigationView>
+
+        <!-- Custom Titlebar overlay to handle drag (placed at very top) -->
+        <Grid x:Name="AppTitleBar" Height="32" VerticalAlignment="Top" Background="Transparent" IsHitTestVisible="True">
+            <TextBlock Text="Wallmane Launcher" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="12" Foreground="#88FFFFFF"/>
+        </Grid>
+    </Grid>
+</Window>
