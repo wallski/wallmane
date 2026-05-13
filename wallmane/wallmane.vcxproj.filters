@@ -12,9 +12,17 @@
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
+    <ClCompile Include="src\Core\WowDetector.cpp" />
+    <ClCompile Include="src\Core\NewsFetcher.cpp" />
+    <ClCompile Include="src\Core\DiscordRPC.cpp" />
+    <ClCompile Include="src\Core\AddonManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="src\Core\WowDetector.h" />
+    <ClInclude Include="src\Core\NewsFetcher.h" />
+    <ClInclude Include="src\Core\DiscordRPC.h" />
+    <ClInclude Include="src\Core\AddonManager.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\Wide310x150Logo.scale-200.png">
@@ -55,5 +63,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="wallmane_TemporaryKey.pfx" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis" />
+    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natstepfilter" />
   </ItemGroup>
 </Project>
