@@ -56,9 +56,6 @@ Requires Visual Studio 2022 with the following workloads:
 - Desktop development with C++
 - Windows application development (WinUI 3 / Windows App SDK)
 
-```
-git clone https://github.com/yourusername/wallmane.git
-```
 
 Open `wallmane.slnx` in Visual Studio, set the configuration to `Debug x64`, and hit F5.
 
