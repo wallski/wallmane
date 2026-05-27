@@ -43,12 +43,14 @@ namespace winrt::wallmane::implementation
         void SetupCompositionRain();
         void OnLightningTick(winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&);
         void TriggerLightningFlash();
+
+        // Tooltip helper for gear items
+        void AttachItemTooltip(Microsoft::UI::Xaml::FrameworkElement const& element, std::wstring const& itemName, std::wstring const& itemQuality);
     };
 }
 
 namespace winrt::wallmane::factory_implementation
 {
     struct MainWindow : MainWindowT<MainWindow, implementation::MainWindow>
-    {
-    };
+    {};
 }

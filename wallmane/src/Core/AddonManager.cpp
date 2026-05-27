@@ -2,14 +2,12 @@
 #include "AddonManager.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Web.Http.h>
+#include <winrt/Windows.Storage.Streams.h>
 #include <windows.h>
-#include <urlmon.h>
 #include <filesystem>
 #include <regex>
 #include <fstream>
 #include <sstream>
-
-#pragma comment(lib, "urlmon.lib")
 
 namespace fs = std::filesystem;
 
@@ -30,7 +28,7 @@ namespace Core
 
             std::wstring folderName = entry.path().filename().wstring();
             fs::path tocPath = entry.path() / (folderName + L".toc");
-            
+
             if (fs::exists(tocPath))
             {
                 Addon a;
@@ -49,10 +47,10 @@ namespace Core
                             std::string t = line.substr(9);
                             t.erase(0, t.find_first_not_of(" \t\r\n"));
                             t.erase(t.find_last_not_of(" \t\r\n") + 1);
-                            
+
                             std::regex colorRegex("\\|c[a-fA-F0-9]{8}|\\|r");
                             t = std::regex_replace(t, colorRegex, "");
-                            
+
                             int size_needed = MultiByteToWideChar(CP_UTF8, 0, &t[0], (int)t.size(), NULL, 0);
                             std::wstring wstrTo(size_needed, 0);
                             MultiByteToWideChar(CP_UTF8, 0, &t[0], (int)t.size(), &wstrTo[0], size_needed);
@@ -63,7 +61,7 @@ namespace Core
                             std::string n = line.substr(9);
                             n.erase(0, n.find_first_not_of(" \t\r\n"));
                             n.erase(n.find_last_not_of(" \t\r\n") + 1);
-                            
+
                             std::regex colorRegex("\\|c[a-fA-F0-9]{8}|\\|r");
                             n = std::regex_replace(n, colorRegex, "");
 
@@ -73,7 +71,8 @@ namespace Core
                             a.description = wstrTo;
                         }
                     }
-                } catch(...) {}
+                }
+                catch (...) {}
 
                 list.push_back(a);
             }
@@ -115,7 +114,7 @@ namespace Core
                 if (std::regex_search(innerHtml, match, titleRegex)) a.name = match[1].str();
                 if (std::regex_search(innerHtml, match, descRegex)) a.description = match[1].str();
                 if (std::regex_search(innerHtml, match, imgRegex)) a.thumbnailUrl = match[1].str();
-                
+
                 std::wstring sanitized = a.name;
                 sanitized.erase(std::remove(sanitized.begin(), sanitized.end(), L' '), sanitized.end());
                 a.folderName = sanitized;
@@ -125,7 +124,7 @@ namespace Core
                 {
                     a.isInstalled = true;
                 }
-                
+
                 if (!a.name.empty()) results.push_back(a);
             }
         }
@@ -187,6 +186,18 @@ namespace Core
         return ok;
     }
 
+    // RAII guard to ensure staging directory is always cleaned up
+    struct StagingDirGuard
+    {
+        fs::path dir;
+        StagingDirGuard(const fs::path& d) : dir(d) {}
+        ~StagingDirGuard()
+        {
+            std::error_code ec;
+            fs::remove_all(dir, ec);
+        }
+    };
+
     // GitHub ZIPs always wrap everything in a single "reponame-branch/" folder.
     // This function moves the CONTENTS of that wrapper into destDir cleanly.
     static void ExtractAndFlatten(const fs::path& zipPath, const fs::path& destDir)
@@ -196,6 +207,9 @@ namespace Core
         std::error_code ec;
         fs::remove_all(stagingDir, ec);
         fs::create_directories(stagingDir);
+
+        // RAII guard ensures cleanup even if we crash/throw
+        StagingDirGuard guard(stagingDir);
 
         std::wstring cmd = L"cmd.exe /c tar -xf \""
             + zipPath.wstring() + L"\" -C \""
@@ -210,7 +224,7 @@ namespace Core
                 fs::path tocFolder = entry.path().parent_path();
                 std::wstring addonName = entry.path().stem().wstring(); // The exact .toc name
                 fs::path destFolder = destDir / addonName;
-                
+
                 if (fs::exists(tocFolder))
                 {
                     fs::remove_all(destFolder, ec);
@@ -219,7 +233,7 @@ namespace Core
             }
         }
 
-        fs::remove_all(stagingDir, ec);
+        // guard destructor cleans up stagingDir automatically
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -237,27 +251,47 @@ namespace Core
         {
             directUrl = GetDownloadUrl(addon.pageUrl);
         }
-        
+
         if (directUrl.empty()) co_return; // Could not find a zip link
 
-        // COM required by URLDownloadToFileW
-        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-
-        fs::path wowDir    = fs::path(wowPath).parent_path();
+        fs::path wowDir = fs::path(wowPath).parent_path();
         fs::path addonsDir = wowDir / L"Interface" / L"AddOns";
-        fs::path tempZip   = wowDir / L"temp_addon.zip";
+        fs::path tempZip = wowDir / L"temp_addon.zip";
 
         fs::create_directories(addonsDir);
 
-        HRESULT hr = URLDownloadToFileW(nullptr, directUrl.c_str(), tempZip.c_str(), 0, nullptr);
-        if (SUCCEEDED(hr))
+        // Use HttpClient for async download instead of URLDownloadToFileW
+        // This avoids COM apartment issues and blocking the thread
+        try
         {
+            winrt::Windows::Web::Http::HttpClient client;
+            winrt::Windows::Foundation::Uri uri(directUrl);
+
+            auto response = co_await client.GetAsync(uri);
+            if (!response.IsSuccessStatusCode()) co_return;
+
+            auto buffer = co_await response.Content().ReadAsBufferAsync();
+
+            // Write buffer to file
+            {
+                std::ofstream out(tempZip, std::ios::binary);
+                if (!out) co_return;
+                auto data = buffer.data();
+                out.write(reinterpret_cast<const char*>(data), buffer.Length());
+                out.close();
+            }
+
             ExtractAndFlatten(tempZip, addonsDir);
+
             std::error_code ec;
             fs::remove(tempZip, ec);
         }
-
-        CoUninitialize();
+        catch (...)
+        {
+            // Clean up temp zip on failure
+            std::error_code ec;
+            fs::remove(tempZip, ec);
+        }
     }
 
 }

@@ -24,6 +24,7 @@
 #include <winrt/Microsoft.UI.h>
 #include <winrt/Windows.Graphics.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
+#include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <filesystem>
 #include <random>
 
@@ -48,7 +49,7 @@ namespace winrt::wallmane::implementation
 
         auto appWindow = this->AppWindow();
         appWindow.Resize({ 1080, 730 });
-        
+
         auto presenter = appWindow.Presenter().as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>();
         presenter.IsResizable(false);
         presenter.IsMaximizable(false);
@@ -136,7 +137,7 @@ namespace winrt::wallmane::implementation
 
         // 120 rain drops for a nice dense effect
         const int RAIN_COUNT = 120;
-        
+
         for (int i = 0; i < RAIN_COUNT; i++)
         {
             double startX = std::uniform_real_distribution<double>(-200, 1400)(g_rng);
@@ -157,7 +158,7 @@ namespace winrt::wallmane::implementation
             animation.InsertKeyFrame(1.0f, { (float)(startX - 200), 800.0f, 0.0f }); // Moves left/down due to angle
             animation.Duration(std::chrono::milliseconds((int)speedMs));
             animation.IterationBehavior(AnimationIterationBehavior::Forever);
-            
+
             // Random start time so they don't all fall in waves
             animation.DelayTime(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(g_rng)));
 
@@ -197,11 +198,11 @@ namespace winrt::wallmane::implementation
                 t3.Tick([flash, t3](auto, auto) mutable {
                     flash.Opacity(0.0);
                     t3.Stop();
-                });
+                    });
                 t3.Start();
-            });
+                });
             t2.Start();
-        });
+            });
 
         flash.Opacity(0.55);
         t1.Start();
@@ -219,76 +220,76 @@ namespace winrt::wallmane::implementation
         auto realms = Core::NewsFetcher::GetRealmStatus();
 
         DispatcherQueue().TryEnqueue([this, lifetime, news, realms]()
-        {
-            NewsPanel().Children().Clear();
-            for (const auto& item : news)
             {
-                Border card;
-                card.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(30, 200, 153, 59)));
-                card.BorderBrush(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 153, 59)));
-                card.BorderThickness({ 1,1,1,1 });
-                card.CornerRadius({ 6,6,6,6 });
-                card.Padding({ 12,8,12,8 });
+                NewsPanel().Children().Clear();
+                for (const auto& item : news)
+                {
+                    Border card;
+                    card.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(30, 200, 153, 59)));
+                    card.BorderBrush(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 153, 59)));
+                    card.BorderThickness({ 1,1,1,1 });
+                    card.CornerRadius({ 6,6,6,6 });
+                    card.Padding({ 12,8,12,8 });
 
-                StackPanel sp;
-                sp.Spacing(2);
+                    StackPanel sp;
+                    sp.Spacing(2);
 
-                TextBlock title;
-                title.Text(item.title);
-                title.FontWeight(Microsoft::UI::Text::FontWeights::SemiBold());
-                title.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 200, 153, 59)));
-                title.FontSize(12);
-                title.CharacterSpacing(100);
+                    TextBlock title;
+                    title.Text(item.title);
+                    title.FontWeight(Microsoft::UI::Text::FontWeights::SemiBold());
+                    title.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 200, 153, 59)));
+                    title.FontSize(12);
+                    title.CharacterSpacing(100);
 
-                TextBlock date;
-                date.Text(item.date);
-                date.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(120, 200, 200, 200)));
-                date.FontSize(10);
+                    TextBlock date;
+                    date.Text(item.date);
+                    date.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(120, 200, 200, 200)));
+                    date.FontSize(10);
 
-                sp.Children().Append(title);
-                sp.Children().Append(date);
-                card.Child(sp);
-                NewsPanel().Children().Append(card);
-            }
+                    sp.Children().Append(title);
+                    sp.Children().Append(date);
+                    card.Child(sp);
+                    NewsPanel().Children().Append(card);
+                }
 
-            RealmPanel().Children().Clear();
-            int totalPlayers = 0;
-            for (const auto& realm : realms)
-            {
-                totalPlayers += realm.population;
-                Grid row;
-                row.ColumnDefinitions().Append(ColumnDefinition());
-                row.ColumnDefinitions().Append(ColumnDefinition());
-                row.ColumnDefinitions().GetAt(0).Width({ 1, GridUnitType::Star });
-                row.ColumnDefinitions().GetAt(1).Width({ 1, GridUnitType::Star });
+                RealmPanel().Children().Clear();
+                int totalPlayers = 0;
+                for (const auto& realm : realms)
+                {
+                    totalPlayers += realm.population;
+                    Grid row;
+                    row.ColumnDefinitions().Append(ColumnDefinition());
+                    row.ColumnDefinitions().Append(ColumnDefinition());
+                    row.ColumnDefinitions().GetAt(0).Width({ 1, GridUnitType::Star });
+                    row.ColumnDefinitions().GetAt(1).Width({ 1, GridUnitType::Star });
 
-                TextBlock name;
-                name.Text(realm.name);
-                name.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(200, 220, 220, 220)));
-                name.FontSize(12);
-                Grid::SetColumn(name, 0);
+                    TextBlock name;
+                    name.Text(realm.name);
+                    name.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(200, 220, 220, 220)));
+                    name.FontSize(12);
+                    Grid::SetColumn(name, 0);
 
-                uint8_t r = 80, g = 200, b = 80;
-                if (realm.population > 10000) { r = 200; g = 220; b = 80; }
-                if (realm.population < 3000) { r = 160; g = 160; b = 160; }
+                    uint8_t r = 80, g = 200, b = 80;
+                    if (realm.population > 10000) { r = 200; g = 220; b = 80; }
+                    if (realm.population < 3000) { r = 160; g = 160; b = 160; }
 
-                TextBlock pop;
-                pop.Text(to_hstring(realm.population) + L" online");
-                pop.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, r, g, b)));
-                pop.FontSize(12);
-                pop.HorizontalAlignment(HorizontalAlignment::Right);
-                Grid::SetColumn(pop, 1);
+                    TextBlock pop;
+                    pop.Text(to_hstring(realm.population) + L" online");
+                    pop.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, r, g, b)));
+                    pop.FontSize(12);
+                    pop.HorizontalAlignment(HorizontalAlignment::Right);
+                    Grid::SetColumn(pop, 1);
 
-                row.Children().Append(name);
-                row.Children().Append(pop);
-                RealmPanel().Children().Append(row);
-            }
+                    row.Children().Append(name);
+                    row.Children().Append(pop);
+                    RealmPanel().Children().Append(row);
+                }
 
-            TotalPlayersLabel().Text(L"Total online: " + to_hstring(totalPlayers));
-            
-            uint64_t playtimeSeconds = Core::WowDetector::GetTotalPlaytimeSeconds();
-            PlaytimeLabel().Text(Core::WowDetector::FormatPlaytime(playtimeSeconds));
-        });
+                TotalPlayersLabel().Text(L"Total online: " + to_hstring(totalPlayers));
+
+                uint64_t playtimeSeconds = Core::WowDetector::GetTotalPlaytimeSeconds();
+                PlaytimeLabel().Text(Core::WowDetector::FormatPlaytime(playtimeSeconds));
+            });
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -357,7 +358,7 @@ namespace winrt::wallmane::implementation
             ShimmerAnimation().Begin();
             AddonsPanel().Children().Clear();
             SearchAddonsBtn().IsEnabled(false);
-        });
+            });
 
         co_await winrt::resume_background();
         auto addons = Core::AddonManager::SearchAddons(query, path);
@@ -369,98 +370,98 @@ namespace winrt::wallmane::implementation
             SearchAddonsBtn().IsEnabled(true);
             AddonsPanel().Children().Clear();
 
-        for (const auto& addon : addons)
-        {
-            Border card;
-            card.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(30, 200, 153, 59)));
-            card.BorderBrush(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 153, 59)));
-            card.BorderThickness({ 1,1,1,1 });
-            card.CornerRadius({ 6,6,6,6 });
-            card.Padding({ 16,12,16,12 });
-
-            Grid grid;
-            grid.ColumnDefinitions().Append(ColumnDefinition());
-            grid.ColumnDefinitions().Append(ColumnDefinition());
-            grid.ColumnDefinitions().Append(ColumnDefinition());
-            grid.ColumnDefinitions().GetAt(0).Width({ 60, GridUnitType::Pixel });
-            grid.ColumnDefinitions().GetAt(1).Width({ 1, GridUnitType::Star });
-            grid.ColumnDefinitions().GetAt(2).Width({ 1, GridUnitType::Auto });
-
-            if (!addon.thumbnailUrl.empty())
+            for (const auto& addon : addons)
             {
-                Microsoft::UI::Xaml::Shapes::Ellipse thumbnail;
-                thumbnail.Width(48);
-                thumbnail.Height(48);
+                Border card;
+                card.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(30, 200, 153, 59)));
+                card.BorderBrush(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 153, 59)));
+                card.BorderThickness({ 1,1,1,1 });
+                card.CornerRadius({ 6,6,6,6 });
+                card.Padding({ 16,12,16,12 });
 
-                Microsoft::UI::Xaml::Media::ImageBrush brush;
-                brush.Stretch(Stretch::UniformToFill);
-                brush.ImageSource(Microsoft::UI::Xaml::Media::Imaging::BitmapImage(winrt::Windows::Foundation::Uri(addon.thumbnailUrl)));
+                Grid grid;
+                grid.ColumnDefinitions().Append(ColumnDefinition());
+                grid.ColumnDefinitions().Append(ColumnDefinition());
+                grid.ColumnDefinitions().Append(ColumnDefinition());
+                grid.ColumnDefinitions().GetAt(0).Width({ 60, GridUnitType::Pixel });
+                grid.ColumnDefinitions().GetAt(1).Width({ 1, GridUnitType::Star });
+                grid.ColumnDefinitions().GetAt(2).Width({ 1, GridUnitType::Auto });
 
-                thumbnail.Fill(brush);
-                Grid::SetColumn(thumbnail, 0);
-                grid.Children().Append(thumbnail);
-            }
+                if (!addon.thumbnailUrl.empty())
+                {
+                    Microsoft::UI::Xaml::Shapes::Ellipse thumbnail;
+                    thumbnail.Width(48);
+                    thumbnail.Height(48);
 
-            StackPanel textPanel;
-            textPanel.Spacing(4);
-            textPanel.VerticalAlignment(VerticalAlignment::Center);
-            
-            TextBlock name;
-            name.Text(addon.name);
-            name.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
-            name.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 200, 153, 59)));
-            name.FontSize(14);
+                    Microsoft::UI::Xaml::Media::ImageBrush brush;
+                    brush.Stretch(Stretch::UniformToFill);
+                    brush.ImageSource(Microsoft::UI::Xaml::Media::Imaging::BitmapImage(winrt::Windows::Foundation::Uri(addon.thumbnailUrl)));
 
-            TextBlock desc;
-            desc.Text(addon.description);
-            desc.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(180, 255, 255, 255)));
-            desc.FontSize(12);
+                    thumbnail.Fill(brush);
+                    Grid::SetColumn(thumbnail, 0);
+                    grid.Children().Append(thumbnail);
+                }
 
-            textPanel.Children().Append(name);
-            textPanel.Children().Append(desc);
-            Grid::SetColumn(textPanel, 1);
+                StackPanel textPanel;
+                textPanel.Spacing(4);
+                textPanel.VerticalAlignment(VerticalAlignment::Center);
 
-            Button btn;
-            btn.Content(box_value(addon.isInstalled ? L"Installed" : L"Install"));
-            btn.IsEnabled(!addon.isInstalled);
-            btn.VerticalAlignment(VerticalAlignment::Center);
-            Grid::SetColumn(btn, 2);
+                TextBlock name;
+                name.Text(addon.name);
+                name.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
+                name.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 200, 153, 59)));
+                name.FontSize(14);
 
-            // Install Logic
-            if (!addon.isInstalled)
-            {
-                btn.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 30, 150, 80)));
-                btn.Foreground(SolidColorBrush(Microsoft::UI::Colors::White()));
+                TextBlock desc;
+                desc.Text(addon.description);
+                desc.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(180, 255, 255, 255)));
+                desc.FontSize(12);
 
-                btn.Click([this, addon, btn](auto, auto) mutable {
-                    std::wstring p = WowPathBox().Text().c_str();
-                    if (p.empty()) return;
+                textPanel.Children().Append(name);
+                textPanel.Children().Append(desc);
+                Grid::SetColumn(textPanel, 1);
 
-                    btn.IsEnabled(false);
-                    btn.Content(box_value(L"Installing..."));
+                Button btn;
+                btn.Content(box_value(addon.isInstalled ? L"Installed" : L"Install"));
+                btn.IsEnabled(!addon.isInstalled);
+                btn.VerticalAlignment(VerticalAlignment::Center);
+                Grid::SetColumn(btn, 2);
 
-                    // Kick off background work cleanly
-                    [](auto self, auto addonCopy, auto path, auto button) -> winrt::fire_and_forget {
-                        co_await Core::AddonManager::InstallAddonAsync(addonCopy, path);
-                        self->DispatcherQueue().TryEnqueue([button]() mutable {
-                            button.Content(winrt::box_value(L"Installed \u2713"));
-                            button.Background(winrt::Microsoft::UI::Xaml::Media::SolidColorBrush(
-                                winrt::Microsoft::UI::ColorHelper::FromArgb(60, 30, 200, 90)));
+                // Install Logic
+                if (!addon.isInstalled)
+                {
+                    btn.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 30, 150, 80)));
+                    btn.Foreground(SolidColorBrush(Microsoft::UI::Colors::White()));
+
+                    btn.Click([this, addon, btn](auto, auto) mutable {
+                        std::wstring p = WowPathBox().Text().c_str();
+                        if (p.empty()) return;
+
+                        btn.IsEnabled(false);
+                        btn.Content(box_value(L"Installing..."));
+
+                        // Kick off background work cleanly
+                        [](auto self, auto addonCopy, auto path, auto button) -> winrt::fire_and_forget {
+                            co_await Core::AddonManager::InstallAddonAsync(addonCopy, path);
+                            self->DispatcherQueue().TryEnqueue([button]() mutable {
+                                button.Content(winrt::box_value(L"Installed \u2713"));
+                                button.Background(winrt::Microsoft::UI::Xaml::Media::SolidColorBrush(
+                                    winrt::Microsoft::UI::ColorHelper::FromArgb(60, 30, 200, 90)));
+                                });
+                            }(get_strong(), addon, p, btn);
                         });
-                    }(get_strong(), addon, p, btn);
-                });
-            }
-            else
-            {
-                btn.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 153, 59)));
-            }
+                }
+                else
+                {
+                    btn.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 153, 59)));
+                }
 
-            grid.Children().Append(textPanel);
-            grid.Children().Append(btn);
-            card.Child(grid);
-            AddonsPanel().Children().Append(card);
-        }
-        });
+                grid.Children().Append(textPanel);
+                grid.Children().Append(btn);
+                card.Child(grid);
+                AddonsPanel().Children().Append(card);
+            }
+            });
     }
 
     void MainWindow::LoadInstalledAddons()
@@ -505,7 +506,7 @@ namespace winrt::wallmane::implementation
             StackPanel textPanel;
             textPanel.Spacing(4);
             textPanel.VerticalAlignment(VerticalAlignment::Center);
-            
+
             TextBlock name;
             name.Text(addon.name);
             name.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
@@ -546,9 +547,9 @@ namespace winrt::wallmane::implementation
                     }
                     self->DispatcherQueue().TryEnqueue([self]() {
                         self->LoadInstalledAddons();
-                    });
-                }(get_strong(), addon.folderName, p);
-            });
+                        });
+                    }(get_strong(), addon.folderName, p);
+                });
 
             grid.Children().Append(textPanel);
             grid.Children().Append(tag);
@@ -668,11 +669,12 @@ namespace winrt::wallmane::implementation
                                         }
                                     }
                                 }
-                            } catch(...) {}
+                            }
+                            catch (...) {}
 
                             std::wstring url = L"https://armory.warmane.com/character/" + charStr + L"/" + realmStr + L"/summary";
                             ArmoryWebView().Source(winrt::Windows::Foundation::Uri(url));
-                        });
+                            });
 
                         CharacterCardsPanel().Children().Append(card);
                     }
@@ -688,6 +690,43 @@ namespace winrt::wallmane::implementation
             tb.Foreground(SolidColorBrush(Microsoft::UI::Colors::Gray()));
             CharacterCardsPanel().Children().Append(tb);
         }
+    }
+
+    void MainWindow::AttachItemTooltip(Microsoft::UI::Xaml::FrameworkElement const& element, std::wstring const& itemName, std::wstring const& itemQuality)
+    {
+        if (itemName.empty()) return;
+
+        // Determine quality color using ColorHelper - use auto to avoid type issues
+        auto qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 255, 255, 255); // default white
+
+        if (itemQuality == L"poor")       qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 157, 157, 157);  // Gray
+        else if (itemQuality == L"common")    qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 255, 255, 255);  // White
+        else if (itemQuality == L"uncommon")  qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 30, 255, 0);    // Green
+        else if (itemQuality == L"rare")      qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 0, 112, 221);  // Blue
+        else if (itemQuality == L"epic")      qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 163, 53, 238);  // Purple
+        else if (itemQuality == L"legendary") qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 255, 128, 0);    // Orange
+        else if (itemQuality == L"artifact")  qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 229, 204, 128);  // Gold
+
+        auto tooltip = Microsoft::UI::Xaml::Controls::ToolTip();
+
+        auto tooltipBorder = Microsoft::UI::Xaml::Controls::Border();
+        tooltipBorder.Background(Microsoft::UI::Xaml::Media::SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(240, 10, 10, 15)));
+        tooltipBorder.BorderBrush(Microsoft::UI::Xaml::Media::SolidColorBrush(qualityColor));
+        tooltipBorder.BorderThickness(Microsoft::UI::Xaml::Thickness{ 1,1,1,1 });
+        tooltipBorder.CornerRadius(Microsoft::UI::Xaml::CornerRadius{ 4,4,4,4 });
+        tooltipBorder.Padding(Microsoft::UI::Xaml::Thickness{ 10, 6, 10, 6 });
+
+        auto tooltipText = Microsoft::UI::Xaml::Controls::TextBlock();
+        tooltipText.Text(itemName);
+        tooltipText.Foreground(Microsoft::UI::Xaml::Media::SolidColorBrush(qualityColor));
+        tooltipText.FontSize(12);
+        tooltipText.FontWeight(Microsoft::UI::Text::FontWeights::SemiBold());
+
+        tooltipBorder.Child(tooltipText);
+        tooltip.Content(tooltipBorder);
+        // Use default placement for tooltips (avoids referencing unavailable enum)
+
+        Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(element, tooltip);
     }
 
     void MainWindow::UpdateArmoryUI(winrt::hstring const& wjsonStr)
@@ -708,13 +747,18 @@ namespace winrt::wallmane::implementation
 
                     auto fillPanel = [&](StackPanel panel, winrt::Windows::Data::Json::JsonArray arr) {
                         for (uint32_t i = 0; i < arr.Size(); i++) {
-                            std::wstring src = arr.GetStringAt(i).c_str();
+                            auto itemObj = arr.GetObjectAt(i);
+                            std::wstring src = itemObj.GetNamedString(L"img", L"").c_str();
+                            std::wstring itemName = itemObj.GetNamedString(L"name", L"").c_str();
+                            std::wstring itemQuality = itemObj.GetNamedString(L"quality", L"").c_str();
+
                             Border slot;
                             slot.Width(40); slot.Height(40);
                             slot.CornerRadius({ 4,4,4,4 });
                             slot.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 255, 255, 255)));
                             slot.BorderBrush(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(60, 200, 153, 59)));
                             slot.BorderThickness({ 1,1,1,1 });
+
                             if (!src.empty()) {
                                 Microsoft::UI::Xaml::Shapes::Rectangle rect;
                                 Microsoft::UI::Xaml::Media::ImageBrush brush;
@@ -723,12 +767,16 @@ namespace winrt::wallmane::implementation
                                 rect.Fill(brush);
                                 slot.Child(rect);
                             }
+
+                            // Attach tooltip with item name and quality
+                            AttachItemTooltip(slot, itemName, itemQuality);
+
                             panel.Children().Append(slot);
                         }
-                    };
+                        };
 
-                    fillPanel(LeftGearPanel(),   root.GetNamedArray(L"leftItems",   winrt::Windows::Data::Json::JsonArray{}));
-                    fillPanel(RightGearPanel(),  root.GetNamedArray(L"rightItems",  winrt::Windows::Data::Json::JsonArray{}));
+                    fillPanel(LeftGearPanel(), root.GetNamedArray(L"leftItems", winrt::Windows::Data::Json::JsonArray{}));
+                    fillPanel(RightGearPanel(), root.GetNamedArray(L"rightItems", winrt::Windows::Data::Json::JsonArray{}));
                     fillPanel(BottomGearPanel(), root.GetNamedArray(L"bottomItems", winrt::Windows::Data::Json::JsonArray{}));
 
                     auto statsPairs = root.GetNamedArray(L"statsPairs");
@@ -754,11 +802,13 @@ namespace winrt::wallmane::implementation
                         else if (i % 4 == 2) StatsCol2().Children().Append(sp);
                         else StatsCol3().Children().Append(sp);
                     }
-                } catch(...) {
+                }
+                catch (...) {
                     // Update failed, possibly missing array elements
                 }
-            });
-        } catch (...) {
+                });
+        }
+        catch (...) {
             // Write to error file
             char* appdata = nullptr;
             size_t len = 0;
@@ -804,22 +854,55 @@ namespace winrt::wallmane::implementation
                         var pointsNode = document.querySelector('.information-right .achievement-points');
                         if (pointsNode) data.points = pointsNode.innerText.trim();
                     } catch(e) {}
-                    function getSlotImgs(container) {
+
+                    function getSlotItems(container) {
                         var arr = [];
                         if (!container) return arr;
                         var slots = container.querySelectorAll('.item-slot');
                         for (var i = 0; i < slots.length; i++) {
                             var img = slots[i].querySelector('img');
-                            arr.push(img ? img.src : '');
+                            var link = slots[i].querySelector('a');
+                            var itemData = { img: '', name: '', quality: '' };
+
+                            if (img) itemData.img = img.src;
+
+                            // Try to get item name from link title or data attribute
+                            if (link) {
+                                itemData.name = link.getAttribute('data-item-name') || 
+                                                link.getAttribute('title') || 
+                                                link.textContent.trim();
+                                itemData.quality = link.getAttribute('data-quality') || '';
+                            }
+
+                            // Fallback: try to extract from img alt or title
+                            if (!itemData.name && img) {
+                                itemData.name = img.getAttribute('alt') || img.getAttribute('title') || '';
+                            }
+
+                            // Try to infer quality from CSS class on the slot or link
+                            if (!itemData.quality && link) {
+                                var classes = link.className || '';
+                                if (classes.indexOf('q0') !== -1) itemData.quality = 'poor';
+                                else if (classes.indexOf('q1') !== -1) itemData.quality = 'common';
+                                else if (classes.indexOf('q2') !== -1) itemData.quality = 'uncommon';
+                                else if (classes.indexOf('q3') !== -1) itemData.quality = 'rare';
+                                else if (classes.indexOf('q4') !== -1) itemData.quality = 'epic';
+                                else if (classes.indexOf('q5') !== -1) itemData.quality = 'legendary';
+                                else if (classes.indexOf('q6') !== -1) itemData.quality = 'artifact';
+                            }
+
+                            arr.push(itemData);
                         }
                         return arr;
                     }
-                    data.leftItems   = getSlotImgs(document.querySelector('.item-left'));
-                    data.rightItems  = getSlotImgs(document.querySelector('.item-right'));
-                    data.bottomItems = getSlotImgs(document.querySelector('.item-bottom'));
+
+                    data.leftItems   = getSlotItems(document.querySelector('.item-left'));
+                    data.rightItems  = getSlotItems(document.querySelector('.item-right'));
+                    data.bottomItems = getSlotItems(document.querySelector('.item-bottom'));
+
                     var stubs = document.querySelectorAll('.character-stats .stub');
                     for (var i = 0; i < stubs.length; i++) {
-                        var text = stubs[i].innerHTML.replace(/<br\s*[\/]?>/gi, '\n').replace(/<[^>]+>/g, '');
+                        var text = stubs[i].innerHTML.replace(/<br\s*[\/?]>/gi, '\n').replace(/<[^>]+>/g, '');
                         var lines = text.split('\n');
                         for (var j = 0; j < lines.length; j++) {
                             var line = lines[j].trim();
@@ -829,6 +912,7 @@ namespace winrt::wallmane::implementation
                             }
                         }
                     }
+
                     var spec = document.querySelector('.specialization .text');
                     if (spec) data.specialization = spec.innerText.replace(/\s+/g, ' ').trim();
                     return JSON.stringify(data);
@@ -845,13 +929,14 @@ namespace winrt::wallmane::implementation
                         try {
                             winrt::Windows::Data::Json::JsonValue val = winrt::Windows::Data::Json::JsonValue::Parse(rawJson);
                             wjson = val.GetString().c_str();
-                        } catch (...) {
+                        }
+                        catch (...) {
                             wjson = rawJson.c_str();
                         }
 
                         try {
                             UpdateArmoryUI(winrt::hstring(wjson));
-                            
+
                             // Save to cache after successfully verifying we can parse it
                             winrt::Windows::Data::Json::JsonObject root = winrt::Windows::Data::Json::JsonObject::Parse(wjson);
                             std::wstring charName = root.GetNamedString(L"name").c_str();
@@ -863,7 +948,7 @@ namespace winrt::wallmane::implementation
                                     std::filesystem::path cachePath = std::filesystem::path(appdata) / L"Wallmane" / L"Cache";
                                     free(appdata);
                                     std::filesystem::create_directories(cachePath);
-                                    
+
                                     // Extract realm from URL (https://armory.warmane.com/character/Name/Realm/summary)
                                     std::wstring url = sender.Source().ToString().c_str();
                                     size_t realmStart = url.find(L"/character/" + charName + L"/");
@@ -882,7 +967,8 @@ namespace winrt::wallmane::implementation
                                     }
                                 }
                             }
-                        } catch(winrt::hresult_error const& ex) {
+                        }
+                        catch (winrt::hresult_error const& ex) {
                             char* appdata = nullptr;
                             size_t len = 0;
                             _dupenv_s(&appdata, &len, "APPDATA");
@@ -898,7 +984,7 @@ namespace winrt::wallmane::implementation
                         }
                     }
                 }
-            });
+                });
 
             // Inject CSS to perfectly isolate the 3D model
             hstring jsIsolate = LR"(
@@ -1038,7 +1124,7 @@ namespace winrt::wallmane::implementation
         if (!path.empty())
         {
             WowPathBox().Text(path);
-            try { 
+            try {
                 char* appdata = nullptr;
                 size_t len = 0;
                 _dupenv_s(&appdata, &len, "APPDATA");
@@ -1079,8 +1165,8 @@ namespace winrt::wallmane::implementation
     {
         auto dp = Windows::ApplicationModel::DataTransfer::DataPackage();
         dp.SetText(L"magnet:?xt=urn:btih:5b65d1928a3025a820b45e6db2451aaaabc5347c&dn=World%20of%20Warcraft%203.3.5a"
-                   L"&tr=udp%3A%2F%2Ftracker.openbittorrent.com%3A80%2Fannounce"
-                   L"&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce");
+            L"&tr=udp%3A%2F%2Ftracker.openbittorrent.com%3A80%2Fannounce"
+            L"&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce");
         Windows::ApplicationModel::DataTransfer::Clipboard::SetContent(dp);
     }
 
