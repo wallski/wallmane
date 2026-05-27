@@ -31,12 +31,19 @@ namespace winrt::wallmane::implementation
 
         void LoadCharacters();
         void UpdateArmoryUI(winrt::hstring const& jsonStr);
+        winrt::fire_and_forget FetchItemName(int32_t itemId);
         void ArmoryWebView_NavigationCompleted(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& sender, winrt::Microsoft::Web::WebView2::Core::CoreWebView2NavigationCompletedEventArgs const& args);
         void ArmoryWebView_CoreWebView2Initialized(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& sender, winrt::Microsoft::UI::Xaml::Controls::CoreWebView2InitializedEventArgs const& args);
 
     private:
         Microsoft::UI::Xaml::DispatcherTimer m_lightningTimer{ nullptr };
         int m_lightningCountdown = 0;
+
+        // Item tooltip cache
+        std::map<int32_t, winrt::hstring> m_itemNameCache;
+        std::map<int32_t, winrt::hstring> m_itemInfoCache;
+        std::map<int32_t, winrt::Windows::UI::Color> m_itemQualityCache;
+        std::map<int32_t, winrt::Microsoft::UI::Xaml::Controls::ToolTip> m_itemTooltips;
 
         void SetupCustomTitleBar();
         void StartAnimations();

@@ -13,6 +13,8 @@
 #include <winrt/Microsoft.UI.Text.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.Web.WebView2.Core.h>
+#include <winrt/Windows.Web.Http.h>
+#include <winrt/Windows.Web.Http.Headers.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #include <winrt/Microsoft.UI.Xaml.Shapes.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
@@ -690,6 +692,109 @@ namespace winrt::wallmane::implementation
         }
     }
 
+    // Quality index → display color
+    static winrt::Windows::UI::Color ItemQualityColor(int q) {
+        switch (q) {
+            case 2:  return Microsoft::UI::ColorHelper::FromArgb(255, 30,  255, 100); // Uncommon green
+            case 3:  return Microsoft::UI::ColorHelper::FromArgb(255, 0,   112, 221); // Rare blue
+            case 4:  return Microsoft::UI::ColorHelper::FromArgb(255, 163, 53,  238); // Epic purple
+            case 5:  return Microsoft::UI::ColorHelper::FromArgb(255, 255, 128, 0);   // Legendary orange
+            default: return Microsoft::UI::ColorHelper::FromArgb(255, 255, 255, 255); // Common white
+        }
+    }
+
+    static std::wstring ParseTooltipHtml(const std::wstring& html) {
+        std::wstring out;
+        bool inTag = false;
+        std::wstring tag;
+        for (size_t i = 0; i < html.size(); i++) {
+            wchar_t c = html[i];
+            if (c == L'<') { inTag = true; tag = L""; }
+            else if (c == L'>') {
+                inTag = false;
+                std::wstring lowerTag;
+                for (auto tc : tag) lowerTag += towlower(tc);
+                if (lowerTag == L"br" || lowerTag == L"br/" || lowerTag == L"br /" || 
+                    lowerTag.find(L"tr") == 0 || lowerTag.find(L"/div") == 0 || lowerTag.find(L"/table") == 0 || lowerTag.find(L"li") == 0) {
+                    out += L"\n";
+                } else if (lowerTag.find(L"td") == 0 || lowerTag.find(L"th") == 0) {
+                    out += L"  ";
+                }
+            }
+            else if (inTag) tag += c;
+            else out += c;
+        }
+        size_t pos = 0;
+        while ((pos = out.find(L"&nbsp;")) != std::wstring::npos) out.replace(pos, 6, L" ");
+        std::wstring cleaned;
+        int newlines = 0;
+        for (wchar_t c : out) {
+            if (c == L'\n') {
+                newlines++;
+                if (newlines <= 2) cleaned += c;
+            } else {
+                newlines = 0;
+                cleaned += c;
+            }
+        }
+        while (!cleaned.empty() && iswspace(cleaned.front())) cleaned.erase(0, 1);
+        while (!cleaned.empty() && iswspace(cleaned.back())) cleaned.pop_back();
+        return cleaned;
+    }
+
+    winrt::fire_and_forget MainWindow::FetchItemName(int32_t itemId)
+    {
+        try {
+            winrt::Windows::Web::Http::HttpClient client{};
+            client.DefaultRequestHeaders().UserAgent().TryParseAdd(L"Mozilla/5.0 WallmaneLauncher");
+
+            auto uri = winrt::Windows::Foundation::Uri(
+                L"https://nether.wowhead.com/wotlk/tooltip/item/" + std::to_wstring(itemId)
+            );
+            auto response = co_await client.GetStringAsync(uri);
+
+            // Parse JSON: { "name": "...", "quality": 4, "tooltip": "..." }
+            winrt::Windows::Data::Json::JsonObject json = winrt::Windows::Data::Json::JsonObject::Parse(response);
+            winrt::hstring name = json.GetNamedString(L"name", L"Unknown Item");
+            int quality = (int)json.GetNamedNumber(L"quality", 1);
+            winrt::hstring tooltipHtml = json.GetNamedString(L"tooltip", L"");
+            winrt::hstring parsedInfo = winrt::hstring(ParseTooltipHtml(tooltipHtml.c_str()));
+
+            // Update UI on dispatcher thread
+            DispatcherQueue().TryEnqueue([this, itemId, name, quality, parsedInfo]() {
+                m_itemNameCache[itemId] = name;
+                m_itemQualityCache[itemId] = ItemQualityColor(quality);
+                m_itemInfoCache[itemId] = parsedInfo;
+
+                if (m_itemTooltips.count(itemId) > 0) {
+                    StackPanel ttContent;
+                    ttContent.Orientation(Orientation::Vertical);
+                    ttContent.Spacing(2);
+                    
+                    TextBlock ttName;
+                    ttName.Text(name);
+                    ttName.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
+                    ttName.Foreground(SolidColorBrush(m_itemQualityCache[itemId]));
+                    ttContent.Children().Append(ttName);
+
+                    if (!parsedInfo.empty()) {
+                        TextBlock ttInfo;
+                        ttInfo.Text(parsedInfo);
+                        ttInfo.FontSize(11);
+                        ttInfo.Foreground(SolidColorBrush(Microsoft::UI::Colors::LightGray()));
+                        ttContent.Children().Append(ttInfo);
+                    }
+                    
+                    m_itemTooltips[itemId].Content(ttContent);
+                }
+            });
+        } catch (...) {
+            DispatcherQueue().TryEnqueue([this, itemId]() {
+                m_itemNameCache[itemId] = L"Unknown Item";
+            });
+        }
+    }
+
     void MainWindow::UpdateArmoryUI(winrt::hstring const& wjsonStr)
     {
         std::wstring wjson = wjsonStr.c_str();
@@ -702,13 +807,25 @@ namespace winrt::wallmane::implementation
                     CharPointsBlock().Text(root.GetNamedString(L"points", L""));
                     CharSpecBlock().Text(root.GetNamedString(L"specialization", L"None"));
 
+                    m_itemTooltips.clear(); // Reset slot→tooltip map for new character
                     LeftGearPanel().Children().Clear();
                     RightGearPanel().Children().Clear();
                     BottomGearPanel().Children().Clear();
 
                     auto fillPanel = [&](StackPanel panel, winrt::Windows::Data::Json::JsonArray arr) {
                         for (uint32_t i = 0; i < arr.Size(); i++) {
-                            std::wstring src = arr.GetStringAt(i).c_str();
+                            // Each item is now { src: "...", id: 12345 }
+                            winrt::Windows::Data::Json::JsonObject itemObj{ nullptr };
+                            std::wstring src;
+                            int32_t itemId = 0;
+                            try {
+                                itemObj = arr.GetObjectAt(i);
+                                src = itemObj.GetNamedString(L"src", L"").c_str();
+                                itemId = (int32_t)itemObj.GetNamedNumber(L"id", 0);
+                            } catch (...) {
+                                try { src = arr.GetStringAt(i).c_str(); } catch (...) {}
+                            }
+
                             Border slot;
                             slot.Width(40); slot.Height(40);
                             slot.CornerRadius({ 4,4,4,4 });
@@ -723,6 +840,41 @@ namespace winrt::wallmane::implementation
                                 rect.Fill(brush);
                                 slot.Child(rect);
                             }
+
+                            // Attach tooltip if we have an item ID
+                            if (itemId > 0) {
+                                Controls::ToolTip tt;
+                                tt.Placement(Controls::Primitives::PlacementMode::Right);
+
+                                if (m_itemNameCache.count(itemId) > 0) {
+                                    // Already cached — set immediately
+                                    StackPanel ttContent;
+                                    ttContent.Orientation(Orientation::Vertical);
+                                    ttContent.Spacing(2);
+                                    TextBlock ttName; ttName.Text(m_itemNameCache[itemId]);
+                                    ttName.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
+                                    if (m_itemQualityCache.count(itemId) > 0)
+                                        ttName.Foreground(SolidColorBrush(m_itemQualityCache[itemId]));
+                                    ttContent.Children().Append(ttName);
+
+                                    if (m_itemInfoCache.count(itemId) > 0 && !m_itemInfoCache[itemId].empty()) {
+                                        TextBlock ttInfo;
+                                        ttInfo.Text(m_itemInfoCache[itemId]);
+                                        ttInfo.FontSize(11);
+                                        ttInfo.Foreground(SolidColorBrush(Microsoft::UI::Colors::LightGray()));
+                                        ttContent.Children().Append(ttInfo);
+                                    }
+
+                                    tt.Content(ttContent);
+                                } else {
+                                    tt.Content(winrt::box_value(L"Loading..."));
+                                    FetchItemName(itemId);
+                                }
+
+                                Controls::ToolTipService::SetToolTip(slot, tt);
+                                m_itemTooltips[itemId] = tt;
+                            }
+
                             panel.Children().Append(slot);
                         }
                     };
@@ -737,22 +889,27 @@ namespace winrt::wallmane::implementation
                     StatsCol2().Children().Clear();
                     StatsCol3().Children().Clear();
 
+                    uint32_t statCol = 0;
                     for (uint32_t i = 0; i < statsPairs.Size(); i++) {
                         auto pair = statsPairs.GetObjectAt(i);
                         std::wstring key = pair.GetNamedString(L"key").c_str();
                         std::wstring val = pair.GetNamedString(L"value").c_str();
 
+                        // Filter out zero-value noise
+                        if (val == L"0" || val == L"0%" || val == L"0.00%") continue;
+
                         StackPanel sp;
                         sp.Orientation(Orientation::Horizontal);
-                        TextBlock tbKey; tbKey.Text(key + L": "); tbKey.Foreground(SolidColorBrush(Microsoft::UI::Colors::Gray())); tbKey.FontSize(12);
-                        TextBlock tbVal; tbVal.Text(val); tbVal.Foreground(SolidColorBrush(Microsoft::UI::Colors::White())); tbVal.FontSize(12); tbVal.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
+                        TextBlock tbKey; tbKey.Text(key + L": "); tbKey.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(180, 200, 200, 200))); tbKey.FontSize(11);
+                        TextBlock tbVal; tbVal.Text(val); tbVal.Foreground(SolidColorBrush(Microsoft::UI::Colors::White())); tbVal.FontSize(11); tbVal.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
                         sp.Children().Append(tbKey);
                         sp.Children().Append(tbVal);
 
-                        if (i % 4 == 0) StatsCol0().Children().Append(sp);
-                        else if (i % 4 == 1) StatsCol1().Children().Append(sp);
-                        else if (i % 4 == 2) StatsCol2().Children().Append(sp);
+                        if (statCol % 4 == 0) StatsCol0().Children().Append(sp);
+                        else if (statCol % 4 == 1) StatsCol1().Children().Append(sp);
+                        else if (statCol % 4 == 2) StatsCol2().Children().Append(sp);
                         else StatsCol3().Children().Append(sp);
+                        statCol++;
                     }
                 } catch(...) {
                     // Update failed, possibly missing array elements
@@ -779,162 +936,116 @@ namespace winrt::wallmane::implementation
     {
         if (args.IsSuccess())
         {
-            // Scrape the DOM
-            hstring jsScraper = LR"(
+            // KEY: Scrape FIRST, inject hide-CSS AFTER posting data.
+            // textContent works on hidden elements; innerText returns "" for display:none.
+            hstring jsPoller = LR"(
                 (function() {
-                    var data = {
-                        name: '',
-                        title: '',
-                        points: '0',
-                        leftItems: [],
-                        rightItems: [],
-                        bottomItems: [],
-                        statsPairs: [],
-                        specialization: ''
-                    };
-                    try {
+                    if (window.__wallmanePolling) return;
+                    window.__wallmanePolling = true;
+                    var attempts = 0;
+                    var maxAttempts = 80; // 80 * 250ms = 20 seconds max
+                    var iv = setInterval(function() {
+                        attempts++;
+                        // Use textContent - works even if element is display:none
                         var nameNode = document.querySelector('.information-left .name');
-                        if (nameNode && nameNode.childNodes.length > 0 && nameNode.childNodes[0].nodeValue) {
-                            data.name = nameNode.childNodes[0].nodeValue.trim();
-                        } else if (nameNode) {
-                            data.name = nameNode.innerText.trim();
-                        }
-                        var titleNode = document.querySelector('.information-left .level-race-class');
-                        if (titleNode) data.title = titleNode.innerText.trim();
-                        var pointsNode = document.querySelector('.information-right .achievement-points');
-                        if (pointsNode) data.points = pointsNode.innerText.trim();
-                    } catch(e) {}
-                    function getSlotImgs(container) {
-                        var arr = [];
-                        if (!container) return arr;
-                        var slots = container.querySelectorAll('.item-slot');
-                        for (var i = 0; i < slots.length; i++) {
-                            var img = slots[i].querySelector('img');
-                            arr.push(img ? img.src : '');
-                        }
-                        return arr;
-                    }
-                    data.leftItems   = getSlotImgs(document.querySelector('.item-left'));
-                    data.rightItems  = getSlotImgs(document.querySelector('.item-right'));
-                    data.bottomItems = getSlotImgs(document.querySelector('.item-bottom'));
-                    var stubs = document.querySelectorAll('.character-stats .stub');
-                    for (var i = 0; i < stubs.length; i++) {
-                        var text = stubs[i].innerHTML.replace(/<br\s*[\/]?>/gi, '\n').replace(/<[^>]+>/g, '');
-                        var lines = text.split('\n');
-                        for (var j = 0; j < lines.length; j++) {
-                            var line = lines[j].trim();
-                            if (line.indexOf(':') !== -1) {
-                                var parts = line.split(':');
-                                data.statsPairs.push({ key: parts[0].trim(), value: parts[1].trim() });
+                        var nameText = nameNode ? (nameNode.textContent || '').trim() : '';
+                        var hasItems = document.querySelector('.item-left .item-slot') !== null;
+                        if (nameText.length > 0 || hasItems || attempts >= maxAttempts) {
+                            clearInterval(iv);
+                            window.__wallmanePolling = false;
+                            var data = {
+                                name: nameText, title: '', points: '0',
+                                leftItems: [], rightItems: [], bottomItems: [],
+                                statsPairs: [], specialization: ''
+                            };
+                            try {
+                                var titleNode = document.querySelector('.information-left .level-race-class');
+                                if (titleNode) data.title = (titleNode.textContent || '').trim();
+                                var pointsNode = document.querySelector('.information-right .achievement-points');
+                                if (pointsNode) data.points = (pointsNode.textContent || '').trim();
+                            } catch(e) {}
+                            function getSlotData(container) {
+                                var arr = [];
+                                if (!container) return arr;
+                                var slots = container.querySelectorAll('.item-slot');
+                                for (var i = 0; i < slots.length; i++) {
+                                    var img = slots[i].querySelector('img');
+                                    var a = slots[i].querySelector('a');
+                                    var id = 0;
+                                    if (a) {
+                                        var h = a.getAttribute('href') || '';
+                                        var r = a.getAttribute('rel') || '';
+                                        var m = h.match(/item=(\d+)/) || r.match(/item=(\d+)/);
+                                        if (m) id = parseInt(m[1]);
+                                    }
+                                    arr.push({ src: img ? img.src : '', id: id });
+                                }
+                                return arr;
                             }
-                        }
-                    }
-                    var spec = document.querySelector('.specialization .text');
-                    if (spec) data.specialization = spec.innerText.replace(/\s+/g, ' ').trim();
-                    return JSON.stringify(data);
-                })();
-            )";
-
-            auto asyncOp = sender.ExecuteScriptAsync(jsScraper);
-            asyncOp.Completed([this, sender](auto&& op, auto status) {
-                if (status == winrt::Windows::Foundation::AsyncStatus::Completed) {
-                    winrt::hstring rawJson = op.GetResults();
-                    // rawJson is a JSON string literal like "\"{\\\"name\\\":...}\""
-                    if (rawJson.size() > 2) {
-                        std::wstring wjson = L"";
-                        try {
-                            winrt::Windows::Data::Json::JsonValue val = winrt::Windows::Data::Json::JsonValue::Parse(rawJson);
-                            wjson = val.GetString().c_str();
-                        } catch (...) {
-                            wjson = rawJson.c_str();
-                        }
-
-                        try {
-                            UpdateArmoryUI(winrt::hstring(wjson));
-                            
-                            // Save to cache after successfully verifying we can parse it
-                            winrt::Windows::Data::Json::JsonObject root = winrt::Windows::Data::Json::JsonObject::Parse(wjson);
-                            std::wstring charName = root.GetNamedString(L"name").c_str();
-                            if (!charName.empty()) {
-                                char* appdata = nullptr;
-                                size_t len = 0;
-                                _dupenv_s(&appdata, &len, "APPDATA");
-                                if (appdata) {
-                                    std::filesystem::path cachePath = std::filesystem::path(appdata) / L"Wallmane" / L"Cache";
-                                    free(appdata);
-                                    std::filesystem::create_directories(cachePath);
-                                    
-                                    // Extract realm from URL (https://armory.warmane.com/character/Name/Realm/summary)
-                                    std::wstring url = sender.Source().ToString().c_str();
-                                    size_t realmStart = url.find(L"/character/" + charName + L"/");
-                                    if (realmStart != std::wstring::npos) {
-                                        realmStart += 11 + charName.length() + 1;
-                                        size_t realmEnd = url.find(L"/summary", realmStart);
-                                        if (realmEnd != std::wstring::npos) {
-                                            std::wstring realmStr = url.substr(realmStart, realmEnd - realmStart);
-                                            std::wstring cacheFile = L"cache_" + charName + L"_" + realmStr + L".json";
-                                            FILE* f;
-                                            if (_wfopen_s(&f, (cachePath / cacheFile).c_str(), L"w, ccs=UTF-8") == 0) {
-                                                fwprintf(f, L"%s", wjson.c_str());
-                                                fclose(f);
-                                            }
-                                        }
+                            data.leftItems   = getSlotData(document.querySelector('.item-left'));
+                            data.rightItems  = getSlotData(document.querySelector('.item-right'));
+                            data.bottomItems = getSlotData(document.querySelector('.item-bottom'));
+                            var stubs = document.querySelectorAll('.character-stats .stub');
+                            for (var i = 0; i < stubs.length; i++) {
+                                var text = stubs[i].innerHTML.replace(/<br\s*[\/]?>/gi, '\n').replace(/<[^>]+>/g, '');
+                                var lines = text.split('\n');
+                                for (var j = 0; j < lines.length; j++) {
+                                    var line = lines[j].trim();
+                                    if (line.indexOf(':') !== -1) {
+                                        var parts = line.split(':');
+                                        if (parts.length >= 2)
+                                            data.statsPairs.push({ key: parts[0].trim(), value: parts.slice(1).join(':').trim() });
                                     }
                                 }
                             }
-                        } catch(winrt::hresult_error const& ex) {
-                            char* appdata = nullptr;
-                            size_t len = 0;
-                            _dupenv_s(&appdata, &len, "APPDATA");
-                            if (appdata) {
-                                std::filesystem::path errPath = std::filesystem::path(appdata) / L"Wallmane" / L"error.txt";
-                                free(appdata);
-                                FILE* f;
-                                if (_wfopen_s(&f, errPath.c_str(), L"w, ccs=UTF-8") == 0) {
-                                    fwprintf(f, L"JSON Parse Error: %s\nJSON payload:\n%s\n", ex.message().c_str(), wjson.c_str());
-                                    fclose(f);
-                                }
-                            }
-                        }
-                    }
-                }
-            });
+                            var spec = document.querySelector('.specialization .text');
+                            if (spec) data.specialization = (spec.textContent || '').replace(/\s+/g, ' ').trim();
 
-            // Inject CSS to perfectly isolate the 3D model
-            hstring jsIsolate = LR"(
-                var style = document.createElement('style');
-                style.type = 'text/css';
-                style.innerHTML = `
-                    ::-webkit-scrollbar { display: none !important; }
-                    .wm-ui-header, .top-header, .footer, #footer, .navbar, .ad-container, .side-ad, .header-container,
-                    #page-navigation, #inpage-navigation, .information, .character-stats, .information-right,
-                    .item-left, .item-right, .item-bottom, #page-footer, noscript, .navigation-wrapper {
-                        display: none !important;
-                    }
-                    body, html, #page-frame, #page-content-wrapper, #content-inner, .wm-ui-generic-frame, .item-model, #character-profile, #character-sheet, #content-wrapper {
-                        background: transparent !important;
-                        border: none !important;
-                        box-shadow: none !important;
-                        overflow: hidden !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                    }
-                    .model, .model canvas {
-                        background: transparent !important;
-                        background-image: none !important;
-                        position: fixed !important;
-                        top: 50% !important;
-                        left: 50% !important;
-                        transform: translate(-50%, -50%) !important;
-                        z-index: 999999 !important;
-                    }
-                    canvas { background: transparent !important; }
-                `;
-                document.head.appendChild(style);
+                            // Post data back to C++ FIRST
+                            window.chrome.webview.postMessage(JSON.stringify(data));
+
+                            // THEN hide the Warmane site chrome so only the 3D model shows
+                            var style = document.createElement('style');
+                            style.innerHTML = `
+                                ::-webkit-scrollbar { display: none !important; }
+                                .wm-ui-header, .top-header, .footer, #footer, .navbar,
+                                .ad-container, .side-ad, .header-container,
+                                #page-navigation, #inpage-navigation, #page-footer,
+                                noscript, .navigation-wrapper, .information,
+                                .character-stats, .information-right,
+                                .item-left, .item-right, .item-bottom { display: none !important; }
+                                body, html, #page-frame, #page-content-wrapper, #content-inner,
+                                .wm-ui-generic-frame, .item-model, #character-profile,
+                                #character-sheet, #content-wrapper, .profile-wrapper, .profile-body {
+                                    background: transparent !important;
+                                    border: none !important;
+                                    box-shadow: none !important;
+                                    overflow: hidden !important;
+                                    margin: 0 !important; padding: 0 !important;
+                                }
+                                .model, .model canvas {
+                                    background: transparent !important;
+                                    background-image: none !important;
+                                    position: fixed !important;
+                                    top: 50% !important; left: 50% !important;
+                                    transform: translate(-50%, -50%) scale(0.8) !important;
+                                    z-index: 999999 !important;
+                                }
+                                canvas { background: transparent !important; }
+                            `;
+                            document.head.appendChild(style);
+                        }
+                    }, 250);
+                })();
             )";
-            sender.ExecuteScriptAsync(jsIsolate);
+            sender.ExecuteScriptAsync(jsPoller);
         }
     }
+
+
+
+
+
 
     void MainWindow::ArmoryWebView_CoreWebView2Initialized(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& sender, winrt::Microsoft::UI::Xaml::Controls::CoreWebView2InitializedEventArgs const& args)
     {
@@ -946,12 +1057,52 @@ namespace winrt::wallmane::implementation
             settings.AreDevToolsEnabled(false);
             settings.IsStatusBarEnabled(false);
 
+            // Listen for postMessage from the polling scraper
+            coreWebView2.WebMessageReceived([this](auto&&, winrt::Microsoft::Web::WebView2::Core::CoreWebView2WebMessageReceivedEventArgs const& e) {
+                std::wstring rawJson = e.TryGetWebMessageAsString().c_str();
+                if (rawJson.empty()) {
+                    // Might be posted as JSON string type
+                    try { rawJson = e.WebMessageAsJson().c_str(); } catch (...) {}
+                }
+                if (!rawJson.empty()) {
+                    DispatcherQueue().TryEnqueue([this, rawJson]() {
+                        UpdateArmoryUI(winrt::hstring(rawJson));
+                        // Save to cache
+                        try {
+                            winrt::Windows::Data::Json::JsonObject root = winrt::Windows::Data::Json::JsonObject::Parse(rawJson);
+                            std::wstring charName = root.GetNamedString(L"name").c_str();
+                            if (!charName.empty()) {
+                                char* appdata = nullptr; size_t len = 0;
+                                _dupenv_s(&appdata, &len, "APPDATA");
+                                if (appdata) {
+                                    std::filesystem::path cachePath = std::filesystem::path(appdata) / L"Wallmane" / L"Cache";
+                                    free(appdata);
+                                    std::filesystem::create_directories(cachePath);
+                                    std::wstring url = ArmoryWebView().Source().ToString().c_str();
+                                    size_t rs = url.find(L"/character/" + charName + L"/");
+                                    if (rs != std::wstring::npos) {
+                                        rs += 11 + charName.length() + 1;
+                                        size_t re = url.find(L"/summary", rs);
+                                        if (re != std::wstring::npos) {
+                                            std::wstring realm = url.substr(rs, re - rs);
+                                            std::wstring cf = L"cache_" + charName + L"_" + realm + L".json";
+                                            FILE* f;
+                                            if (_wfopen_s(&f, (cachePath / cf).c_str(), L"w, ccs=UTF-8") == 0) {
+                                                fwprintf(f, L"%s", rawJson.c_str());
+                                                fclose(f);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (...) {}
+                    });
+                }
+            });
+
             // Inject BEFORE any page script runs — intercepts ModelViewer constructor
-            // to strip the background image before the 3D model renders it.
             hstring preScript = LR"(
                 (function() {
-                    // Wait for ModelViewer to be defined, then wrap it
-                    var _origDefine = Object.defineProperty;
                     var patchModelViewer = function() {
                         if (typeof window.ModelViewer === 'function') {
                             var _Orig = window.ModelViewer;
@@ -959,7 +1110,6 @@ namespace winrt::wallmane::implementation
                                 if (cfg) cfg.background = null;
                                 return new _Orig(cfg);
                             };
-                            // Copy static properties
                             for (var k in _Orig) {
                                 if (_Orig.hasOwnProperty(k)) window.ModelViewer[k] = _Orig[k];
                             }
@@ -967,21 +1117,16 @@ namespace winrt::wallmane::implementation
                         }
                         return false;
                     };
-                    // Poll until ModelViewer is available
                     var attempts = 0;
                     var iv = setInterval(function() {
                         if (patchModelViewer() || ++attempts > 100) clearInterval(iv);
                     }, 20);
-
-                    // Also clear canvas background via WebGL after load
                     window.addEventListener('load', function() {
                         setTimeout(function() {
                             var canvas = document.querySelector('.model canvas');
                             if (canvas) {
                                 var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                                if (gl) {
-                                    gl.clearColor(0.0, 0.0, 0.0, 0.0);
-                                }
+                                if (gl) gl.clearColor(0.0, 0.0, 0.0, 0.0);
                             }
                         }, 500);
                     });
@@ -1059,17 +1204,36 @@ namespace winrt::wallmane::implementation
 
     void MainWindow::ClearCache_Click(IInspectable const&, RoutedEventArgs const&)
     {
-        std::wstring path = WowPathBox().Text().c_str();
-        if (path.empty()) return;
+        // Clear in-memory item tooltip caches
+        m_itemNameCache.clear();
+        m_itemQualityCache.clear();
+        m_itemInfoCache.clear();
+        m_itemTooltips.clear();
 
-        std::filesystem::path cacheDir = std::filesystem::path(path).parent_path() / L"Cache";
-        std::error_code ec;
-        if (std::filesystem::exists(cacheDir))
-            std::filesystem::remove_all(cacheDir, ec);
+        // Clear armory JSON cache files from AppData
+        char* appdata = nullptr;
+        size_t len = 0;
+        _dupenv_s(&appdata, &len, "APPDATA");
+        if (appdata) {
+            std::filesystem::path armoryCache = std::filesystem::path(appdata) / L"Wallmane" / L"Cache";
+            free(appdata);
+            std::error_code ec;
+            if (std::filesystem::exists(armoryCache))
+                std::filesystem::remove_all(armoryCache, ec);
+        }
+
+        // Also clear WoW addon cache if path is set
+        std::wstring path = WowPathBox().Text().c_str();
+        if (!path.empty()) {
+            std::filesystem::path cacheDir = std::filesystem::path(path).parent_path() / L"Cache";
+            std::error_code ec;
+            if (std::filesystem::exists(cacheDir))
+                std::filesystem::remove_all(cacheDir, ec);
+        }
 
         ContentDialog dlg;
         dlg.Title(box_value(L"Cache Cleared"));
-        dlg.Content(box_value(L"Cache folder removed successfully."));
+        dlg.Content(box_value(L"All caches cleared. Characters will reload fresh on next click."));
         dlg.CloseButtonText(L"OK");
         dlg.XamlRoot(this->Content().XamlRoot());
         dlg.ShowAsync();
