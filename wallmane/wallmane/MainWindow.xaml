@@ -254,8 +254,8 @@
                             <Grid x:Name="NativeArmoryLayout" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/> <!-- Header -->
-                                    <RowDefinition Height="Auto"/> <!-- Main Body (Gear + Model) -->
-                                    <RowDefinition Height="*"/>    <!-- Stats -->
+                                    <RowDefinition Height="360"/> <!-- Main Body -->
+                                    <RowDefinition Height="Auto"/> <!-- Stats -->
                                 </Grid.RowDefinitions>
 
                                 <!-- Header -->
@@ -271,7 +271,7 @@
                                 </Grid>
 
                                 <!-- Main Body -->
-                                <Grid Grid.Row="1" MinHeight="380">
+                                <Grid Grid.Row="1">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/> <!-- Left Gear -->
                                         <ColumnDefinition Width="*"/>    <!-- Center Model -->
@@ -289,10 +289,10 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
                                         
-                                        <!-- Center Model via WebView2 -->
-                                        <Border Grid.Row="0" Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                                            <WebView2 x:Name="ArmoryWebView" DefaultBackgroundColor="Transparent" NavigationCompleted="ArmoryWebView_NavigationCompleted" CoreWebView2Initialized="ArmoryWebView_CoreWebView2Initialized" HorizontalAlignment="Center" MaxWidth="350"/>
-                                        </Border>
+                                        <!-- Model -->
+                                        <WebView2 x:Name="ArmoryWebView" Grid.Row="0"
+                                                  NavigationCompleted="ArmoryWebView_NavigationCompleted"
+                                                  CoreWebView2Initialized="ArmoryWebView_CoreWebView2Initialized"/>
                                         
                                         <!-- Bottom Weapons -->
                                         <StackPanel x:Name="BottomGearPanel" Grid.Row="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" Margin="0,10,0,0"/>
@@ -311,20 +311,18 @@
                                 </Grid>
 
                                 <!-- Bottom Stats -->
-                                <ScrollViewer Grid.Row="2" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
-                                    <Grid x:Name="StatsGrid">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel x:Name="StatsCol0" Grid.Column="0" Spacing="4"/>
-                                        <StackPanel x:Name="StatsCol1" Grid.Column="1" Spacing="4"/>
-                                        <StackPanel x:Name="StatsCol2" Grid.Column="2" Spacing="4"/>
-                                        <StackPanel x:Name="StatsCol3" Grid.Column="3" Spacing="4"/>
-                                    </Grid>
-                                </ScrollViewer>
+                                <Grid Grid.Row="2" Margin="0,16,0,0" x:Name="StatsGrid">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel x:Name="StatsCol0" Grid.Column="0" Spacing="4"/>
+                                    <StackPanel x:Name="StatsCol1" Grid.Column="1" Spacing="4"/>
+                                    <StackPanel x:Name="StatsCol2" Grid.Column="2" Spacing="4"/>
+                                    <StackPanel x:Name="StatsCol3" Grid.Column="3" Spacing="4"/>
+                                </Grid>
                             </Grid>
                         </Grid>
                     </Border>
