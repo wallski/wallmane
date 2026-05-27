@@ -21,11 +21,15 @@ namespace winrt::wallmane::implementation
             Microsoft::UI::Xaml::RoutedEventArgs const& e);
         void CopyMagnet_Click(winrt::Windows::Foundation::IInspectable const& sender,
             Microsoft::UI::Xaml::RoutedEventArgs const& e);
-        void InstallHDPatch_Click(winrt::Windows::Foundation::IInspectable const& sender,
-            Microsoft::UI::Xaml::RoutedEventArgs const& e);
+
+        void SearchAddonsBtn_Click(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+        void AddonSearchBox_KeyDown(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& e);
+        winrt::fire_and_forget PerformAddonSearch(std::wstring query);
+        void TabDiscover_Click(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+        void TabInstalled_Click(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+        void LoadInstalledAddons();
 
     private:
-        void RefreshAddonsList();
         Microsoft::UI::Xaml::DispatcherTimer m_lightningTimer{ nullptr };
         int m_lightningCountdown = 0;
 

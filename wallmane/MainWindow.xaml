@@ -82,12 +82,18 @@
 
                     <!-- Header -->
                     <Border Grid.Row="0" Background="#22C8993B" BorderBrush="#33C8993B" BorderThickness="0,0,0,1" Padding="20,14">
-                        <StackPanel Orientation="Vertical" Spacing="2">
-                            <TextBlock Text="WALLMANE" FontSize="22" FontWeight="Bold" Foreground="#C8993B"
-                                       CharacterSpacing="300"/>
-                            <TextBlock Text="WARMANE WOTLK LAUNCHER" FontSize="10" Foreground="#66C8993B"
-                                       CharacterSpacing="200"/>
-                        </StackPanel>
+                        <Grid>
+                            <StackPanel Orientation="Vertical" Spacing="2" HorizontalAlignment="Left">
+                                <TextBlock Text="WALLMANE" FontSize="22" FontWeight="Bold" Foreground="#C8993B"
+                                           CharacterSpacing="300"/>
+                                <TextBlock Text="WARMANE WOTLK LAUNCHER" FontSize="10" Foreground="#66C8993B"
+                                           CharacterSpacing="200"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Vertical" Spacing="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock Text="TIME PLAYED" FontSize="10" Foreground="#66C8993B" CharacterSpacing="200" HorizontalAlignment="Right"/>
+                                <TextBlock x:Name="PlaytimeLabel" Text="0m" FontSize="14" FontWeight="Bold" Foreground="#C8993B" HorizontalAlignment="Right"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- News + Realm Status -->
@@ -148,18 +154,65 @@
 
                 <!-- ─────────── ADDONS PAGE ─────────── -->
                 <Grid x:Name="AddonsPage" Visibility="Collapsed" Margin="24,20">
-                    <StackPanel Spacing="16">
-                        <TextBlock Text="ONE-CLICK ADDONS" FontSize="14" FontWeight="Bold"
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <StackPanel Grid.Row="0" Spacing="16">
+                        <TextBlock Text="ADDONS" FontSize="14" FontWeight="Bold"
                                    Foreground="#C8993B" CharacterSpacing="300"/>
-                        <TextBlock Text="Essential WotLK 3.3.5a addons downloaded and installed automatically." Foreground="#88FFFFFF" FontSize="12"/>
+                        <TextBlock Text="Search, discover, and manage WotLK 3.3.5a addons automatically." Foreground="#88FFFFFF" FontSize="12"/>
                         
-                        <!-- Addons Grid -->
-                        <ScrollViewer VerticalScrollBarVisibility="Hidden">
-                            <StackPanel x:Name="AddonsPanel" Spacing="12" Margin="0,10,0,0">
+                        <!-- Tabs -->
+                        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Left">
+                            <ToggleButton x:Name="TabDiscover" Content="Discover" IsChecked="True" Click="TabDiscover_Click"/>
+                            <ToggleButton x:Name="TabInstalled" Content="Installed" Click="TabInstalled_Click"/>
+                        </StackPanel>
+
+                        <!-- Search Bar -->
+                        <Grid x:Name="AddonSearchContainer" Margin="0,5,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="AddonSearchBox" Grid.Column="0" PlaceholderText="Search for addons (e.g. GearScore)..." 
+                                     Background="#22FFFFFF" BorderBrush="#44C8993B" Foreground="White" VerticalAlignment="Center" KeyDown="AddonSearchBox_KeyDown"/>
+                            <Button x:Name="SearchAddonsBtn" Grid.Column="1" Margin="10,0,0,0" Content="Search" Click="SearchAddonsBtn_Click"
+                                    Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B" VerticalAlignment="Center"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Discover Grid -->
+                    <ScrollViewer x:Name="DiscoverScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Hidden" Margin="0,15,0,0">
+                        <Grid>
+                            <StackPanel x:Name="AddonsPanel" Spacing="12">
                                 <!-- Cards will be injected via C++ -->
                             </StackPanel>
-                        </ScrollViewer>
-                    </StackPanel>
+                            
+                            <!-- Skeleton Loading -->
+                            <StackPanel x:Name="SkeletonPanel" Spacing="12" Visibility="Collapsed">
+                                <StackPanel.Resources>
+                                    <Storyboard x:Name="ShimmerAnimation" RepeatBehavior="Forever">
+                                        <DoubleAnimation Storyboard.TargetName="Shimmer1" Storyboard.TargetProperty="Opacity" From="0.1" To="0.5" Duration="0:0:0.8" AutoReverse="True"/>
+                                        <DoubleAnimation Storyboard.TargetName="Shimmer2" Storyboard.TargetProperty="Opacity" From="0.1" To="0.5" Duration="0:0:0.8" AutoReverse="True" BeginTime="0:0:0.2"/>
+                                        <DoubleAnimation Storyboard.TargetName="Shimmer3" Storyboard.TargetProperty="Opacity" From="0.1" To="0.5" Duration="0:0:0.8" AutoReverse="True" BeginTime="0:0:0.4"/>
+                                    </Storyboard>
+                                </StackPanel.Resources>
+                                <Border x:Name="Shimmer1" Height="80" Background="#1AFFFFFF" CornerRadius="8"/>
+                                <Border x:Name="Shimmer2" Height="80" Background="#1AFFFFFF" CornerRadius="8"/>
+                                <Border x:Name="Shimmer3" Height="80" Background="#1AFFFFFF" CornerRadius="8"/>
+                            </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
+                    
+                    <!-- Installed Grid -->
+                    <ScrollViewer x:Name="InstalledScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Hidden" Margin="0,15,0,0" Visibility="Collapsed">
+                        <StackPanel x:Name="InstalledPanel" Spacing="12">
+                            <!-- Installed cards will be injected via C++ -->
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
 
                 <!-- ─────────── SETTINGS PAGE ─────────── -->
@@ -200,17 +253,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- HD Models -->
-                        <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
-                                CornerRadius="8" Padding="16">
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="HD CHARACTER MODELS" FontSize="10" Foreground="#C8993B"
-                                           CharacterSpacing="200" FontWeight="Bold"/>
-                                <TextBlock Text="Download Warlords of Draenor HD models for WotLK." Foreground="#88FFFFFF" FontSize="12"/>
-                                <Button x:Name="HDPatchButton" Content="Download HD Patch" Click="InstallHDPatch_Click"
-                                        Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
-                            </StackPanel>
-                        </Border>
+
 
                         <!-- Torrent -->
                         <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"

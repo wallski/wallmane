@@ -1,9 +1,13 @@
 #include "pch.h"
 #include "AddonManager.h"
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Web.Http.h>
 #include <windows.h>
 #include <urlmon.h>
 #include <filesystem>
+#include <regex>
+#include <fstream>
+#include <sstream>
 
 #pragma comment(lib, "urlmon.lib")
 
@@ -11,54 +15,152 @@ namespace fs = std::filesystem;
 
 namespace Core
 {
-    std::vector<Addon> AddonManager::GetAvailableAddons(const std::wstring& wowPath)
+    std::vector<Addon> AddonManager::GetInstalledAddons(const std::wstring& wowPath)
     {
-        std::vector<Addon> list = {
-            // name                folderName (what WoW sees)     description                                         url
-            { L"pfQuest",
-              L"pfQuest-wotlk",   // shagu/pfQuest ZIP extracts: pfQuest-master/pfQuest-wotlk/
-              L"Quest helper with a huge database. Works great on Warmane.",
-              L"https://github.com/shagu/pfQuest/archive/refs/heads/master.zip", false },
+        std::vector<Addon> list;
+        if (wowPath.empty() || !fs::exists(wowPath)) return list;
 
-            { L"Deadly Boss Mods",
-              L"DBM-Core",        // DBM-Warmane ZIP extracts multiple folders, DBM-Core is the key one
-              L"Essential boss timers for all raids & dungeons on Warmane.",
-              L"https://github.com/Zidras/DBM-Warmane/archive/refs/heads/main.zip", false },
+        auto addonsDir = fs::path(wowPath).parent_path() / L"Interface" / L"AddOns";
+        if (!fs::exists(addonsDir)) return list;
 
-            { L"Recount",
-              L"Recount",
-              L"Graphical DPS & healing meter. Shows damage, heals, deaths and more.",
-              L"https://github.com/guldo77/Recount-AddonsCustom-3.3.5/archive/refs/heads/master.zip", false },
-
-            { L"ElvUI",
-              L"ElvUI",           // ElvUI-WotLK ZIP extracts: ElvUI-master/ElvUI/ and ElvUI_OptionsUI/
-              L"Full UI replacement with a sleek, modern look and tons of features.",
-              L"https://github.com/ElvUI-WotLK/ElvUI/archive/refs/heads/master.zip", false },
-
-            { L"OmniCC",
-              L"OmniCC",
-              L"Shows cooldown countdowns as numbers directly on your spell icons.",
-              L"https://github.com/tullamods/OmniCC/archive/refs/heads/master.zip", false },
-        };
-
-        if (!wowPath.empty() && fs::exists(wowPath))
+        std::error_code ec;
+        for (auto& entry : fs::directory_iterator(addonsDir, ec))
         {
-            // wowPath = full path to Wow.exe, so parent = WoW install dir
-            auto addonsDir = fs::path(wowPath).parent_path() / L"Interface" / L"AddOns";
-            for (auto& addon : list)
+            if (!entry.is_directory()) continue;
+
+            std::wstring folderName = entry.path().filename().wstring();
+            fs::path tocPath = entry.path() / (folderName + L".toc");
+            
+            if (fs::exists(tocPath))
             {
-                if (fs::exists(addonsDir / addon.folderName))
-                    addon.isInstalled = true;
+                Addon a;
+                a.folderName = folderName;
+                a.name = folderName; // fallback
+                a.description = L"Local Addon";
+                a.isInstalled = true;
+
+                try {
+                    std::ifstream f(tocPath);
+                    std::string line;
+                    while (std::getline(f, line))
+                    {
+                        if (line.find("## Title:") == 0)
+                        {
+                            std::string t = line.substr(9);
+                            t.erase(0, t.find_first_not_of(" \t\r\n"));
+                            t.erase(t.find_last_not_of(" \t\r\n") + 1);
+                            
+                            std::regex colorRegex("\\|c[a-fA-F0-9]{8}|\\|r");
+                            t = std::regex_replace(t, colorRegex, "");
+                            
+                            int size_needed = MultiByteToWideChar(CP_UTF8, 0, &t[0], (int)t.size(), NULL, 0);
+                            std::wstring wstrTo(size_needed, 0);
+                            MultiByteToWideChar(CP_UTF8, 0, &t[0], (int)t.size(), &wstrTo[0], size_needed);
+                            a.name = wstrTo;
+                        }
+                        else if (line.find("## Notes:") == 0)
+                        {
+                            std::string n = line.substr(9);
+                            n.erase(0, n.find_first_not_of(" \t\r\n"));
+                            n.erase(n.find_last_not_of(" \t\r\n") + 1);
+                            
+                            std::regex colorRegex("\\|c[a-fA-F0-9]{8}|\\|r");
+                            n = std::regex_replace(n, colorRegex, "");
+
+                            int size_needed = MultiByteToWideChar(CP_UTF8, 0, &n[0], (int)n.size(), NULL, 0);
+                            std::wstring wstrTo(size_needed, 0);
+                            MultiByteToWideChar(CP_UTF8, 0, &n[0], (int)n.size(), &wstrTo[0], size_needed);
+                            a.description = wstrTo;
+                        }
+                    }
+                } catch(...) {}
+
+                list.push_back(a);
             }
         }
         return list;
     }
 
-    bool AddonManager::IsHDPatchInstalled(const std::wstring& wowPath)
+
+
+    std::vector<Addon> AddonManager::SearchAddons(const std::wstring& query, const std::wstring& wowPath)
     {
-        if (wowPath.empty()) return false;
-        auto patchFile = fs::path(wowPath).parent_path() / L"Data" / L"patch-w.mpq";
-        return fs::exists(patchFile);
+        std::vector<Addon> results;
+        if (query.empty()) return results;
+
+        try
+        {
+            winrt::Windows::Web::Http::HttpClient client;
+            std::wstring url = L"https://felbite.com/?s=" + query + L"&post_type=addon";
+            winrt::hstring html = client.GetStringAsync(winrt::Windows::Foundation::Uri(url)).get();
+            std::wstring htmlStr = html.c_str();
+
+            std::wregex blockRegex(L"<a class=\"card card-wide[^\"]*\" href=\"([^\"]+)\">([\\s\\S]*?)</a>");
+            std::wsregex_iterator it(htmlStr.begin(), htmlStr.end(), blockRegex);
+            std::wsregex_iterator end;
+
+            std::wregex imgRegex(L"(?:data-src|src)=\"([^\"]+)\"");
+            std::wregex titleRegex(L"<h5[^>]*>([^<]+)</h5>");
+            std::wregex descRegex(L"<p class=\"text-light[^>]*>([^<]+)</p>");
+
+            auto addonsDir = wowPath.empty() ? fs::path() : fs::path(wowPath).parent_path() / L"Interface" / L"AddOns";
+
+            for (; it != end; ++it)
+            {
+                Addon a;
+                a.pageUrl = (*it)[1].str();
+                std::wstring innerHtml = (*it)[2].str();
+
+                std::wsmatch match;
+                if (std::regex_search(innerHtml, match, titleRegex)) a.name = match[1].str();
+                if (std::regex_search(innerHtml, match, descRegex)) a.description = match[1].str();
+                if (std::regex_search(innerHtml, match, imgRegex)) a.thumbnailUrl = match[1].str();
+                
+                std::wstring sanitized = a.name;
+                sanitized.erase(std::remove(sanitized.begin(), sanitized.end(), L' '), sanitized.end());
+                a.folderName = sanitized;
+                a.isInstalled = false;
+
+                if (!wowPath.empty() && fs::exists(addonsDir / a.folderName))
+                {
+                    a.isInstalled = true;
+                }
+                
+                if (!a.name.empty()) results.push_back(a);
+            }
+        }
+        catch (...) {}
+
+        return results;
+    }
+
+    std::wstring AddonManager::GetDownloadUrl(const std::wstring& pageUrl)
+    {
+        if (pageUrl.empty()) return L"";
+        try
+        {
+            winrt::Windows::Web::Http::HttpClient client;
+            winrt::hstring html = client.GetStringAsync(winrt::Windows::Foundation::Uri(pageUrl)).get();
+            std::wstring htmlStr = html.c_str();
+
+            // Match the real zip file URL for the WotLK expansion inside Felbite's modal
+            // Avoiding [\\s\\S]*? to prevent std::regex stack overflow
+            std::wregex wotlkRegex(L"<a href=\"([^\"]+\\.zip)\"[^>]*>(?:(?:<img[^>]*>)|\\s)*Wrath of the Lich King</a>");
+            std::wsmatch match;
+            if (std::regex_search(htmlStr, match, wotlkRegex))
+            {
+                return match[1].str();
+            }
+
+            // Fallback for Github releases if button text is different
+            std::wregex rx2(L"<a href=\"([^\"]+\\.zip)\"[^>]*class=\"btn btn-primary");
+            if (std::regex_search(htmlStr, match, rx2))
+            {
+                return match[1].str();
+            }
+        }
+        catch (...) {}
+        return L"";
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -100,33 +202,19 @@ namespace Core
             + stagingDir.wstring() + L"\"";
         RunHiddenProcess(cmd);
 
-        // The staging dir now has one top-level folder (e.g. "pfQuest-master/")
-        // Move every directory INSIDE it to destDir
-        for (auto& topEntry : fs::directory_iterator(stagingDir, ec))
+        // Find all .toc files recursively
+        for (auto& entry : fs::recursive_directory_iterator(stagingDir, ec))
         {
-            if (!topEntry.is_directory()) continue;
-
-            // Check if this top folder itself has a .toc → it's a direct addon folder
-            bool hasToC = false;
-            for (auto& f : fs::directory_iterator(topEntry, ec))
-                if (f.path().extension() == L".toc") { hasToC = true; break; }
-
-            if (hasToC)
+            if (entry.is_regular_file() && entry.path().extension() == L".toc")
             {
-                // Move directly to AddOns/<foldername>
-                fs::path dest = destDir / topEntry.path().filename();
-                fs::remove_all(dest, ec);
-                fs::rename(topEntry, dest, ec);
-            }
-            else
-            {
-                // It's a wrapper (pfQuest-master/) — move its sub-folders to AddOns
-                for (auto& inner : fs::directory_iterator(topEntry, ec))
+                fs::path tocFolder = entry.path().parent_path();
+                std::wstring addonName = entry.path().stem().wstring(); // The exact .toc name
+                fs::path destFolder = destDir / addonName;
+                
+                if (fs::exists(tocFolder))
                 {
-                    if (!inner.is_directory()) continue;
-                    fs::path dest = destDir / inner.path().filename();
-                    fs::remove_all(dest, ec);
-                    fs::rename(inner, dest, ec);
+                    fs::remove_all(destFolder, ec);
+                    fs::rename(tocFolder, destFolder, ec);
                 }
             }
         }
@@ -143,6 +231,15 @@ namespace Core
 
         if (wowPath.empty()) co_return;
 
+        // If it's a scraped addon, fetch the direct zip link first
+        std::wstring directUrl = addon.downloadUrl;
+        if (directUrl.empty() && !addon.pageUrl.empty())
+        {
+            directUrl = GetDownloadUrl(addon.pageUrl);
+        }
+        
+        if (directUrl.empty()) co_return; // Could not find a zip link
+
         // COM required by URLDownloadToFileW
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
@@ -152,7 +249,7 @@ namespace Core
 
         fs::create_directories(addonsDir);
 
-        HRESULT hr = URLDownloadToFileW(nullptr, addon.downloadUrl.c_str(), tempZip.c_str(), 0, nullptr);
+        HRESULT hr = URLDownloadToFileW(nullptr, directUrl.c_str(), tempZip.c_str(), 0, nullptr);
         if (SUCCEEDED(hr))
         {
             ExtractAndFlatten(tempZip, addonsDir);
@@ -163,25 +260,4 @@ namespace Core
         CoUninitialize();
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // Install HD Patch
-    // ─────────────────────────────────────────────────────────────────
-    winrt::Windows::Foundation::IAsyncAction AddonManager::InstallHDPatchAsync(std::wstring patchUrl, std::wstring wowPath)
-    {
-        co_await winrt::resume_background();
-
-        if (wowPath.empty()) co_return;
-
-        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-
-        fs::path wowDir  = fs::path(wowPath).parent_path();
-        fs::path dataDir = wowDir / L"Data";
-        fs::create_directories(dataDir);
-
-        // patch-w.mpq is loaded after all stock Blizzard patches alphabetically
-        fs::path dest = dataDir / L"patch-w.mpq";
-        URLDownloadToFileW(nullptr, patchUrl.c_str(), dest.c_str(), 0, nullptr);
-
-        CoUninitialize();
-    }
 }

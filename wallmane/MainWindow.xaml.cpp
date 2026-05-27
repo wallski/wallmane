@@ -21,6 +21,7 @@
 #include <microsoft.ui.xaml.window.h>
 #include <winrt/Microsoft.UI.h>
 #include <winrt/Windows.Graphics.h>
+#include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
 #include <filesystem>
 #include <random>
 
@@ -264,6 +265,9 @@ namespace winrt::wallmane::implementation
             }
 
             TotalPlayersLabel().Text(L"Total online: " + to_hstring(totalPlayers));
+            
+            uint64_t playtimeSeconds = Core::WowDetector::GetTotalPlaytimeSeconds();
+            PlaytimeLabel().Text(Core::WowDetector::FormatPlaytime(playtimeSeconds));
         });
     }
 
@@ -281,31 +285,64 @@ namespace winrt::wallmane::implementation
 
         if (tag == L"addons_page")
         {
-            RefreshAddonsList();
-        }
-        else if (tag == L"settings_page")
-        {
-            // Check HD patch on every visit so button state is always accurate
-            std::wstring p = WowPathBox().Text().c_str();
-            if (Core::AddonManager::IsHDPatchInstalled(p))
-            {
-                HDPatchButton().Content(box_value(L"HD Patch Installed \u2713"));
-                HDPatchButton().IsEnabled(false);
-            }
-            else
-            {
-                HDPatchButton().Content(box_value(L"Download HD Patch"));
-                HDPatchButton().IsEnabled(true);
-            }
+            PerformAddonSearch(L"");
         }
     }
 
-    void MainWindow::RefreshAddonsList()
+    void MainWindow::SearchAddonsBtn_Click(IInspectable const&, RoutedEventArgs const&)
     {
-        std::wstring path = WowPathBox().Text().c_str();
-        auto addons = Core::AddonManager::GetAvailableAddons(path);
+        PerformAddonSearch(AddonSearchBox().Text().c_str());
+    }
 
-        AddonsPanel().Children().Clear();
+    void MainWindow::AddonSearchBox_KeyDown(IInspectable const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& e)
+    {
+        if (e.Key() == winrt::Windows::System::VirtualKey::Enter)
+        {
+            PerformAddonSearch(AddonSearchBox().Text().c_str());
+        }
+    }
+
+    void MainWindow::TabDiscover_Click(IInspectable const&, RoutedEventArgs const&)
+    {
+        TabDiscover().IsChecked(true);
+        TabInstalled().IsChecked(false);
+        DiscoverScrollViewer().Visibility(Visibility::Visible);
+        AddonSearchContainer().Visibility(Visibility::Visible);
+        InstalledScrollViewer().Visibility(Visibility::Collapsed);
+    }
+
+    void MainWindow::TabInstalled_Click(IInspectable const&, RoutedEventArgs const&)
+    {
+        TabInstalled().IsChecked(true);
+        TabDiscover().IsChecked(false);
+        DiscoverScrollViewer().Visibility(Visibility::Collapsed);
+        AddonSearchContainer().Visibility(Visibility::Collapsed);
+        InstalledScrollViewer().Visibility(Visibility::Visible);
+        LoadInstalledAddons();
+    }
+
+    winrt::fire_and_forget MainWindow::PerformAddonSearch(std::wstring query)
+    {
+        auto lifetime = get_strong();
+        std::wstring path = WowPathBox().Text().c_str();
+
+        DispatcherQueue().TryEnqueue([this]() {
+            AddonsPanel().Visibility(Visibility::Collapsed);
+            SkeletonPanel().Visibility(Visibility::Visible);
+            ShimmerAnimation().Begin();
+            AddonsPanel().Children().Clear();
+            SearchAddonsBtn().IsEnabled(false);
+        });
+
+        co_await winrt::resume_background();
+        auto addons = Core::AddonManager::SearchAddons(query, path);
+
+        DispatcherQueue().TryEnqueue([this, lifetime, addons]() {
+            ShimmerAnimation().Stop();
+            SkeletonPanel().Visibility(Visibility::Collapsed);
+            AddonsPanel().Visibility(Visibility::Visible);
+            SearchAddonsBtn().IsEnabled(true);
+            AddonsPanel().Children().Clear();
 
         for (const auto& addon : addons)
         {
@@ -319,11 +356,29 @@ namespace winrt::wallmane::implementation
             Grid grid;
             grid.ColumnDefinitions().Append(ColumnDefinition());
             grid.ColumnDefinitions().Append(ColumnDefinition());
-            grid.ColumnDefinitions().GetAt(0).Width({ 1, GridUnitType::Star });
-            grid.ColumnDefinitions().GetAt(1).Width({ 1, GridUnitType::Auto });
+            grid.ColumnDefinitions().Append(ColumnDefinition());
+            grid.ColumnDefinitions().GetAt(0).Width({ 60, GridUnitType::Pixel });
+            grid.ColumnDefinitions().GetAt(1).Width({ 1, GridUnitType::Star });
+            grid.ColumnDefinitions().GetAt(2).Width({ 1, GridUnitType::Auto });
+
+            if (!addon.thumbnailUrl.empty())
+            {
+                Microsoft::UI::Xaml::Shapes::Ellipse thumbnail;
+                thumbnail.Width(48);
+                thumbnail.Height(48);
+
+                Microsoft::UI::Xaml::Media::ImageBrush brush;
+                brush.Stretch(Stretch::UniformToFill);
+                brush.ImageSource(Microsoft::UI::Xaml::Media::Imaging::BitmapImage(winrt::Windows::Foundation::Uri(addon.thumbnailUrl)));
+
+                thumbnail.Fill(brush);
+                Grid::SetColumn(thumbnail, 0);
+                grid.Children().Append(thumbnail);
+            }
 
             StackPanel textPanel;
             textPanel.Spacing(4);
+            textPanel.VerticalAlignment(VerticalAlignment::Center);
             
             TextBlock name;
             name.Text(addon.name);
@@ -338,13 +393,13 @@ namespace winrt::wallmane::implementation
 
             textPanel.Children().Append(name);
             textPanel.Children().Append(desc);
-            Grid::SetColumn(textPanel, 0);
+            Grid::SetColumn(textPanel, 1);
 
             Button btn;
             btn.Content(box_value(addon.isInstalled ? L"Installed" : L"Install"));
             btn.IsEnabled(!addon.isInstalled);
             btn.VerticalAlignment(VerticalAlignment::Center);
-            Grid::SetColumn(btn, 1);
+            Grid::SetColumn(btn, 2);
 
             // Install Logic
             if (!addon.isInstalled)
@@ -379,6 +434,101 @@ namespace winrt::wallmane::implementation
             grid.Children().Append(btn);
             card.Child(grid);
             AddonsPanel().Children().Append(card);
+        }
+        });
+    }
+
+    void MainWindow::LoadInstalledAddons()
+    {
+        std::wstring path = WowPathBox().Text().c_str();
+        InstalledPanel().Children().Clear();
+
+        if (path.empty())
+        {
+            TextBlock tb;
+            tb.Text(L"Please configure your Wow.exe path in Settings first.");
+            tb.Foreground(SolidColorBrush(Microsoft::UI::Colors::Gray()));
+            InstalledPanel().Children().Append(tb);
+            return;
+        }
+
+        auto addons = Core::AddonManager::GetInstalledAddons(path);
+        if (addons.empty())
+        {
+            TextBlock tb;
+            tb.Text(L"No addons found in your Interface/AddOns folder.");
+            tb.Foreground(SolidColorBrush(Microsoft::UI::Colors::Gray()));
+            InstalledPanel().Children().Append(tb);
+            return;
+        }
+
+        for (const auto& addon : addons)
+        {
+            Border card;
+            card.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(30, 200, 153, 59)));
+            card.BorderBrush(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 153, 59)));
+            card.BorderThickness({ 1,1,1,1 });
+            card.CornerRadius({ 6,6,6,6 });
+            card.Padding({ 16,12,16,12 });
+
+            Grid grid;
+            grid.ColumnDefinitions().Append(ColumnDefinition());
+            grid.ColumnDefinitions().Append(ColumnDefinition());
+            grid.ColumnDefinitions().GetAt(0).Width({ 1, GridUnitType::Star });
+            grid.ColumnDefinitions().GetAt(1).Width({ 1, GridUnitType::Auto });
+
+            StackPanel textPanel;
+            textPanel.Spacing(4);
+            textPanel.VerticalAlignment(VerticalAlignment::Center);
+            
+            TextBlock name;
+            name.Text(addon.name);
+            name.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
+            name.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 200, 153, 59)));
+            name.FontSize(14);
+
+            TextBlock desc;
+            desc.Text(addon.description);
+            desc.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(180, 255, 255, 255)));
+            desc.FontSize(12);
+
+            textPanel.Children().Append(name);
+            textPanel.Children().Append(desc);
+            Grid::SetColumn(textPanel, 0);
+
+            Button tag;
+            tag.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 50, 50)));
+            tag.CornerRadius({ 4,4,4,4 });
+            tag.Padding({ 10,4,10,4 });
+            tag.Content(box_value(L"Remove"));
+            tag.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 255, 100, 100)));
+            tag.VerticalAlignment(VerticalAlignment::Center);
+            Grid::SetColumn(tag, 1);
+
+            tag.Click([this, addon, tag](auto, auto) mutable {
+                std::wstring p = WowPathBox().Text().c_str();
+                if (p.empty()) return;
+
+                tag.IsEnabled(false);
+                tag.Content(box_value(L"Removing..."));
+
+                [](auto self, auto folder, auto path) -> winrt::fire_and_forget {
+                    co_await winrt::resume_background();
+                    std::error_code ec;
+                    std::filesystem::path addonDir = std::filesystem::path(path).parent_path() / L"Interface" / L"AddOns" / folder;
+                    if (std::filesystem::exists(addonDir)) {
+                        std::filesystem::remove_all(addonDir, ec);
+                    }
+                    self->DispatcherQueue().TryEnqueue([self]() {
+                        self->LoadInstalledAddons();
+                    });
+                }(get_strong(), addon.folderName, p);
+            });
+
+            grid.Children().Append(textPanel);
+            grid.Children().Append(tag);
+            card.Child(grid);
+            InstalledPanel().Children().Append(card);
         }
     }
 
@@ -461,32 +611,5 @@ namespace winrt::wallmane::implementation
         Windows::ApplicationModel::DataTransfer::Clipboard::SetContent(dp);
     }
 
-    void MainWindow::InstallHDPatch_Click(IInspectable const&, RoutedEventArgs const&)
-    {
-        std::wstring p = WowPathBox().Text().c_str();
-        if (p.empty())
-        {
-            // No path set — go to settings
-            ContentDialog dlg;
-            dlg.Title(box_value(L"No WoW Path Set"));
-            dlg.Content(box_value(L"Please set your WoW installation path in Settings first."));
-            dlg.CloseButtonText(L"OK");
-            dlg.XamlRoot(this->Content().XamlRoot());
-            dlg.ShowAsync();
-            return;
-        }
 
-        HDPatchButton().IsEnabled(false);
-        HDPatchButton().Content(box_value(L"Downloading... (this may take a while)"));
-
-        // NOTE: Replace this URL with a real direct .mpq link from the Warmane forums!
-        std::wstring patchUrl = L"https://placeholder.example.com/patch-w.mpq";
-
-        [](auto self, auto url, auto path) -> winrt::fire_and_forget {
-            co_await Core::AddonManager::InstallHDPatchAsync(url, path);
-            self->DispatcherQueue().TryEnqueue([self]() {
-                self->HDPatchButton().Content(winrt::box_value(L"HD Patch Installed \u2713"));
-            });
-        }(get_strong(), patchUrl, p);
-    }
 }
