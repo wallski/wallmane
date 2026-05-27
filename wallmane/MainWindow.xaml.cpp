@@ -9,8 +9,10 @@
 #include "src/Core/AddonManager.h"
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.ApplicationModel.DataTransfer.h>
+#include <winrt/Windows.Data.Json.h>
 #include <winrt/Microsoft.UI.Text.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
+#include <winrt/Microsoft.Web.WebView2.Core.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #include <winrt/Microsoft.UI.Xaml.Shapes.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
@@ -46,12 +48,30 @@ namespace winrt::wallmane::implementation
 
         auto appWindow = this->AppWindow();
         appWindow.Resize({ 1080, 660 });
+        
+        auto presenter = appWindow.Presenter().as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>();
+        presenter.IsResizable(false);
+        presenter.IsMaximizable(false);
 
         try
         {
-            auto settings = ApplicationData::Current().LocalSettings().Values();
-            if (settings.HasKey(L"WowPath"))
-                WowPathBox().Text(unbox_value<hstring>(settings.Lookup(L"WowPath")));
+            char* appdata = nullptr;
+            size_t len = 0;
+            _dupenv_s(&appdata, &len, "APPDATA");
+            if (appdata) {
+                std::filesystem::path configPath = std::filesystem::path(appdata) / L"Wallmane" / L"wowpath.txt";
+                free(appdata);
+                if (std::filesystem::exists(configPath)) {
+                    FILE* f;
+                    if (_wfopen_s(&f, configPath.c_str(), L"r, ccs=UTF-8") == 0) {
+                        wchar_t buffer[MAX_PATH];
+                        if (fgetws(buffer, MAX_PATH, f)) {
+                            WowPathBox().Text(buffer);
+                        }
+                        fclose(f);
+                    }
+                }
+            }
         }
         catch (...) {}
 
@@ -281,11 +301,16 @@ namespace winrt::wallmane::implementation
 
         HomePage().Visibility(tag == L"home_page" ? Visibility::Visible : Visibility::Collapsed);
         AddonsPage().Visibility(tag == L"addons_page" ? Visibility::Visible : Visibility::Collapsed);
+        CharactersPage().Visibility(tag == L"characters_page" ? Visibility::Visible : Visibility::Collapsed);
         SettingsPage().Visibility(tag == L"settings_page" ? Visibility::Visible : Visibility::Collapsed);
 
         if (tag == L"addons_page")
         {
             PerformAddonSearch(L"");
+        }
+        else if (tag == L"characters_page")
+        {
+            LoadCharacters();
         }
     }
 
@@ -533,6 +558,440 @@ namespace winrt::wallmane::implementation
     }
 
     // ─────────────────────────────────────────────────────────────────
+    // Characters & Armory
+    // ─────────────────────────────────────────────────────────────────
+    void MainWindow::LoadCharacters()
+    {
+        std::wstring path = WowPathBox().Text().c_str();
+        CharacterCardsPanel().Children().Clear();
+
+        if (path.empty())
+        {
+            TextBlock tb;
+            tb.Text(L"Please configure your Wow.exe path in Settings first.");
+            tb.Foreground(SolidColorBrush(Microsoft::UI::Colors::Gray()));
+            CharacterCardsPanel().Children().Append(tb);
+            return;
+        }
+
+        std::filesystem::path accountsDir = std::filesystem::path(path).parent_path() / L"WTF" / L"Account";
+        if (!std::filesystem::exists(accountsDir))
+        {
+            TextBlock tb;
+            tb.Text(L"No WTF/Account folder found. Have you logged in yet?");
+            tb.Foreground(SolidColorBrush(Microsoft::UI::Colors::Gray()));
+            CharacterCardsPanel().Children().Append(tb);
+            return;
+        }
+
+        // Ensure CoreWebView2 is initializing
+        ArmoryWebView().EnsureCoreWebView2Async();
+
+        try
+        {
+            for (const auto& accountEntry : std::filesystem::directory_iterator(accountsDir))
+            {
+                if (!accountEntry.is_directory()) continue;
+                std::wstring accName = accountEntry.path().filename().wstring();
+                if (accName == L"SavedVariables") continue;
+
+                for (const auto& realmEntry : std::filesystem::directory_iterator(accountEntry.path()))
+                {
+                    if (!realmEntry.is_directory()) continue;
+                    std::wstring realmName = realmEntry.path().filename().wstring();
+                    if (realmName == L"SavedVariables") continue;
+
+                    for (const auto& charEntry : std::filesystem::directory_iterator(realmEntry.path()))
+                    {
+                        if (!charEntry.is_directory()) continue;
+                        std::wstring charName = charEntry.path().filename().wstring();
+                        if (charName == L"SavedVariables") continue;
+
+                        // Create UI Card
+                        Button card;
+                        card.HorizontalAlignment(HorizontalAlignment::Stretch);
+                        card.HorizontalContentAlignment(HorizontalAlignment::Left);
+                        card.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(30, 200, 153, 59)));
+                        card.BorderBrush(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 153, 59)));
+                        card.BorderThickness({ 1,1,1,1 });
+                        card.CornerRadius({ 6,6,6,6 });
+                        card.Padding({ 16,12,16,12 });
+
+                        StackPanel sp;
+                        sp.Spacing(4);
+
+                        TextBlock nameBlock;
+                        nameBlock.Text(charName);
+                        nameBlock.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
+                        nameBlock.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 200, 153, 59)));
+                        nameBlock.FontSize(16);
+
+                        TextBlock realmBlock;
+                        realmBlock.Text(realmName);
+                        realmBlock.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(180, 255, 255, 255)));
+                        realmBlock.FontSize(12);
+
+                        sp.Children().Append(nameBlock);
+                        sp.Children().Append(realmBlock);
+                        card.Content(sp);
+
+                        card.Click([this, charName, realmName](auto, auto) {
+                            ArmoryPlaceholder().Visibility(Visibility::Collapsed);
+                            NativeArmoryLayout().Visibility(Visibility::Visible);
+
+                            // Set WebView transparent so it blends perfectly
+                            ArmoryWebView().DefaultBackgroundColor(winrt::Microsoft::UI::Colors::Transparent());
+
+                            std::wstring charStr = charName.c_str();
+                            std::wstring realmStr = realmName.c_str();
+                            std::wstring cacheFile = L"cache_" + charStr + L"_" + realmStr + L".json";
+
+                            try {
+                                char* appdata = nullptr;
+                                size_t len = 0;
+                                _dupenv_s(&appdata, &len, "APPDATA");
+                                if (appdata) {
+                                    std::filesystem::path cachePath = std::filesystem::path(appdata) / L"Wallmane" / L"Cache";
+                                    free(appdata);
+                                    if (std::filesystem::exists(cachePath / cacheFile)) {
+                                        FILE* f;
+                                        if (_wfopen_s(&f, (cachePath / cacheFile).c_str(), L"rt, ccs=UTF-8") == 0) {
+                                            std::wstring content;
+                                            wchar_t buf[1024];
+                                            while (fgetws(buf, 1024, f)) {
+                                                content += buf;
+                                            }
+                                            fclose(f);
+                                            if (!content.empty()) {
+                                                UpdateArmoryUI(winrt::hstring(content));
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch(...) {}
+
+                            std::wstring url = L"https://armory.warmane.com/character/" + charStr + L"/" + realmStr + L"/summary";
+                            ArmoryWebView().Source(winrt::Windows::Foundation::Uri(url));
+                        });
+
+                        CharacterCardsPanel().Children().Append(card);
+                    }
+                }
+            }
+        }
+        catch (...) {}
+
+        if (CharacterCardsPanel().Children().Size() == 0)
+        {
+            TextBlock tb;
+            tb.Text(L"No characters found.");
+            tb.Foreground(SolidColorBrush(Microsoft::UI::Colors::Gray()));
+            CharacterCardsPanel().Children().Append(tb);
+        }
+    }
+
+    void MainWindow::UpdateArmoryUI(winrt::hstring const& wjsonStr)
+    {
+        std::wstring wjson = wjsonStr.c_str();
+        try {
+            winrt::Windows::Data::Json::JsonObject root = winrt::Windows::Data::Json::JsonObject::Parse(wjson);
+            DispatcherQueue().TryEnqueue([this, root, wjson]() {
+                try {
+                    CharNameBlock().Text(root.GetNamedString(L"name", L""));
+                    CharTitleBlock().Text(root.GetNamedString(L"title", L""));
+                    CharPointsBlock().Text(root.GetNamedString(L"points", L""));
+                    CharSpecBlock().Text(root.GetNamedString(L"specialization", L"None"));
+
+                    LeftGearPanel().Children().Clear();
+                    RightGearPanel().Children().Clear();
+                    BottomGearPanel().Children().Clear();
+
+                    auto fillPanel = [&](StackPanel panel, winrt::Windows::Data::Json::JsonArray arr) {
+                        for (uint32_t i = 0; i < arr.Size(); i++) {
+                            std::wstring src = arr.GetStringAt(i).c_str();
+                            Border slot;
+                            slot.Width(40); slot.Height(40);
+                            slot.CornerRadius({ 4,4,4,4 });
+                            slot.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 255, 255, 255)));
+                            slot.BorderBrush(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(60, 200, 153, 59)));
+                            slot.BorderThickness({ 1,1,1,1 });
+                            if (!src.empty()) {
+                                Microsoft::UI::Xaml::Shapes::Rectangle rect;
+                                Microsoft::UI::Xaml::Media::ImageBrush brush;
+                                brush.Stretch(Stretch::UniformToFill);
+                                brush.ImageSource(Microsoft::UI::Xaml::Media::Imaging::BitmapImage(winrt::Windows::Foundation::Uri(src)));
+                                rect.Fill(brush);
+                                slot.Child(rect);
+                            }
+                            panel.Children().Append(slot);
+                        }
+                    };
+
+                    fillPanel(LeftGearPanel(),   root.GetNamedArray(L"leftItems",   winrt::Windows::Data::Json::JsonArray{}));
+                    fillPanel(RightGearPanel(),  root.GetNamedArray(L"rightItems",  winrt::Windows::Data::Json::JsonArray{}));
+                    fillPanel(BottomGearPanel(), root.GetNamedArray(L"bottomItems", winrt::Windows::Data::Json::JsonArray{}));
+
+                    auto statsPairs = root.GetNamedArray(L"statsPairs");
+                    StatsCol0().Children().Clear();
+                    StatsCol1().Children().Clear();
+                    StatsCol2().Children().Clear();
+                    StatsCol3().Children().Clear();
+
+                    for (uint32_t i = 0; i < statsPairs.Size(); i++) {
+                        auto pair = statsPairs.GetObjectAt(i);
+                        std::wstring key = pair.GetNamedString(L"key").c_str();
+                        std::wstring val = pair.GetNamedString(L"value").c_str();
+
+                        StackPanel sp;
+                        sp.Orientation(Orientation::Horizontal);
+                        TextBlock tbKey; tbKey.Text(key + L": "); tbKey.Foreground(SolidColorBrush(Microsoft::UI::Colors::Gray())); tbKey.FontSize(12);
+                        TextBlock tbVal; tbVal.Text(val); tbVal.Foreground(SolidColorBrush(Microsoft::UI::Colors::White())); tbVal.FontSize(12); tbVal.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
+                        sp.Children().Append(tbKey);
+                        sp.Children().Append(tbVal);
+
+                        if (i % 4 == 0) StatsCol0().Children().Append(sp);
+                        else if (i % 4 == 1) StatsCol1().Children().Append(sp);
+                        else if (i % 4 == 2) StatsCol2().Children().Append(sp);
+                        else StatsCol3().Children().Append(sp);
+                    }
+                } catch(...) {
+                    // Update failed, possibly missing array elements
+                }
+            });
+        } catch (...) {
+            // Write to error file
+            char* appdata = nullptr;
+            size_t len = 0;
+            _dupenv_s(&appdata, &len, "APPDATA");
+            if (appdata) {
+                std::filesystem::path errPath = std::filesystem::path(appdata) / L"Wallmane" / L"error_ui.txt";
+                free(appdata);
+                FILE* f;
+                if (_wfopen_s(&f, errPath.c_str(), L"w, ccs=UTF-8") == 0) {
+                    fwprintf(f, L"JSON Parse Error in UpdateArmoryUI:\n%s\n", wjson.c_str());
+                    fclose(f);
+                }
+            }
+        }
+    }
+
+    void MainWindow::ArmoryWebView_NavigationCompleted(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& sender, winrt::Microsoft::Web::WebView2::Core::CoreWebView2NavigationCompletedEventArgs const& args)
+    {
+        if (args.IsSuccess())
+        {
+            // Scrape the DOM
+            hstring jsScraper = LR"(
+                (function() {
+                    var data = {
+                        name: '',
+                        title: '',
+                        points: '0',
+                        leftItems: [],
+                        rightItems: [],
+                        bottomItems: [],
+                        statsPairs: [],
+                        specialization: ''
+                    };
+                    try {
+                        var nameNode = document.querySelector('.information-left .name');
+                        if (nameNode && nameNode.childNodes.length > 0 && nameNode.childNodes[0].nodeValue) {
+                            data.name = nameNode.childNodes[0].nodeValue.trim();
+                        } else if (nameNode) {
+                            data.name = nameNode.innerText.trim();
+                        }
+                        var titleNode = document.querySelector('.information-left .level-race-class');
+                        if (titleNode) data.title = titleNode.innerText.trim();
+                        var pointsNode = document.querySelector('.information-right .achievement-points');
+                        if (pointsNode) data.points = pointsNode.innerText.trim();
+                    } catch(e) {}
+                    function getSlotImgs(container) {
+                        var arr = [];
+                        if (!container) return arr;
+                        var slots = container.querySelectorAll('.item-slot');
+                        for (var i = 0; i < slots.length; i++) {
+                            var img = slots[i].querySelector('img');
+                            arr.push(img ? img.src : '');
+                        }
+                        return arr;
+                    }
+                    data.leftItems   = getSlotImgs(document.querySelector('.item-left'));
+                    data.rightItems  = getSlotImgs(document.querySelector('.item-right'));
+                    data.bottomItems = getSlotImgs(document.querySelector('.item-bottom'));
+                    var stubs = document.querySelectorAll('.character-stats .stub');
+                    for (var i = 0; i < stubs.length; i++) {
+                        var text = stubs[i].innerHTML.replace(/<br\s*[\/]?>/gi, '\n').replace(/<[^>]+>/g, '');
+                        var lines = text.split('\n');
+                        for (var j = 0; j < lines.length; j++) {
+                            var line = lines[j].trim();
+                            if (line.indexOf(':') !== -1) {
+                                var parts = line.split(':');
+                                data.statsPairs.push({ key: parts[0].trim(), value: parts[1].trim() });
+                            }
+                        }
+                    }
+                    var spec = document.querySelector('.specialization .text');
+                    if (spec) data.specialization = spec.innerText.replace(/\s+/g, ' ').trim();
+                    return JSON.stringify(data);
+                })();
+            )";
+
+            auto asyncOp = sender.ExecuteScriptAsync(jsScraper);
+            asyncOp.Completed([this, sender](auto&& op, auto status) {
+                if (status == winrt::Windows::Foundation::AsyncStatus::Completed) {
+                    winrt::hstring rawJson = op.GetResults();
+                    // rawJson is a JSON string literal like "\"{\\\"name\\\":...}\""
+                    if (rawJson.size() > 2) {
+                        std::wstring wjson = L"";
+                        try {
+                            winrt::Windows::Data::Json::JsonValue val = winrt::Windows::Data::Json::JsonValue::Parse(rawJson);
+                            wjson = val.GetString().c_str();
+                        } catch (...) {
+                            wjson = rawJson.c_str();
+                        }
+
+                        try {
+                            UpdateArmoryUI(winrt::hstring(wjson));
+                            
+                            // Save to cache after successfully verifying we can parse it
+                            winrt::Windows::Data::Json::JsonObject root = winrt::Windows::Data::Json::JsonObject::Parse(wjson);
+                            std::wstring charName = root.GetNamedString(L"name").c_str();
+                            if (!charName.empty()) {
+                                char* appdata = nullptr;
+                                size_t len = 0;
+                                _dupenv_s(&appdata, &len, "APPDATA");
+                                if (appdata) {
+                                    std::filesystem::path cachePath = std::filesystem::path(appdata) / L"Wallmane" / L"Cache";
+                                    free(appdata);
+                                    std::filesystem::create_directories(cachePath);
+                                    
+                                    // Extract realm from URL (https://armory.warmane.com/character/Name/Realm/summary)
+                                    std::wstring url = sender.Source().ToString().c_str();
+                                    size_t realmStart = url.find(L"/character/" + charName + L"/");
+                                    if (realmStart != std::wstring::npos) {
+                                        realmStart += 11 + charName.length() + 1;
+                                        size_t realmEnd = url.find(L"/summary", realmStart);
+                                        if (realmEnd != std::wstring::npos) {
+                                            std::wstring realmStr = url.substr(realmStart, realmEnd - realmStart);
+                                            std::wstring cacheFile = L"cache_" + charName + L"_" + realmStr + L".json";
+                                            FILE* f;
+                                            if (_wfopen_s(&f, (cachePath / cacheFile).c_str(), L"w, ccs=UTF-8") == 0) {
+                                                fwprintf(f, L"%s", wjson.c_str());
+                                                fclose(f);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch(winrt::hresult_error const& ex) {
+                            char* appdata = nullptr;
+                            size_t len = 0;
+                            _dupenv_s(&appdata, &len, "APPDATA");
+                            if (appdata) {
+                                std::filesystem::path errPath = std::filesystem::path(appdata) / L"Wallmane" / L"error.txt";
+                                free(appdata);
+                                FILE* f;
+                                if (_wfopen_s(&f, errPath.c_str(), L"w, ccs=UTF-8") == 0) {
+                                    fwprintf(f, L"JSON Parse Error: %s\nJSON payload:\n%s\n", ex.message().c_str(), wjson.c_str());
+                                    fclose(f);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Inject CSS to perfectly isolate the 3D model
+            hstring jsIsolate = LR"(
+                var style = document.createElement('style');
+                style.type = 'text/css';
+                style.innerHTML = `
+                    ::-webkit-scrollbar { display: none !important; }
+                    .wm-ui-header, .top-header, .footer, #footer, .navbar, .ad-container, .side-ad, .header-container,
+                    #page-navigation, #inpage-navigation, .information, .character-stats, .information-right,
+                    .item-left, .item-right, .item-bottom, #page-footer, noscript, .navigation-wrapper {
+                        display: none !important;
+                    }
+                    body, html, #page-frame, #page-content-wrapper, #content-inner, .wm-ui-generic-frame, .item-model, #character-profile, #character-sheet, #content-wrapper {
+                        background: transparent !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        overflow: hidden !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+                    .model, .model canvas {
+                        background: transparent !important;
+                        background-image: none !important;
+                        position: fixed !important;
+                        top: 50% !important;
+                        left: 50% !important;
+                        transform: translate(-50%, -50%) !important;
+                        z-index: 999999 !important;
+                    }
+                    canvas { background: transparent !important; }
+                `;
+                document.head.appendChild(style);
+            )";
+            sender.ExecuteScriptAsync(jsIsolate);
+        }
+    }
+
+    void MainWindow::ArmoryWebView_CoreWebView2Initialized(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& sender, winrt::Microsoft::UI::Xaml::Controls::CoreWebView2InitializedEventArgs const& args)
+    {
+        auto coreWebView2 = sender.CoreWebView2();
+        if (coreWebView2)
+        {
+            auto settings = coreWebView2.Settings();
+            settings.AreDefaultContextMenusEnabled(false);
+            settings.AreDevToolsEnabled(false);
+            settings.IsStatusBarEnabled(false);
+
+            // Inject BEFORE any page script runs — intercepts ModelViewer constructor
+            // to strip the background image before the 3D model renders it.
+            hstring preScript = LR"(
+                (function() {
+                    // Wait for ModelViewer to be defined, then wrap it
+                    var _origDefine = Object.defineProperty;
+                    var patchModelViewer = function() {
+                        if (typeof window.ModelViewer === 'function') {
+                            var _Orig = window.ModelViewer;
+                            window.ModelViewer = function(cfg) {
+                                if (cfg) cfg.background = null;
+                                return new _Orig(cfg);
+                            };
+                            // Copy static properties
+                            for (var k in _Orig) {
+                                if (_Orig.hasOwnProperty(k)) window.ModelViewer[k] = _Orig[k];
+                            }
+                            return true;
+                        }
+                        return false;
+                    };
+                    // Poll until ModelViewer is available
+                    var attempts = 0;
+                    var iv = setInterval(function() {
+                        if (patchModelViewer() || ++attempts > 100) clearInterval(iv);
+                    }, 20);
+
+                    // Also clear canvas background via WebGL after load
+                    window.addEventListener('load', function() {
+                        setTimeout(function() {
+                            var canvas = document.querySelector('.model canvas');
+                            if (canvas) {
+                                var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                                if (gl) {
+                                    gl.clearColor(0.0, 0.0, 0.0, 0.0);
+                                }
+                            }
+                        }, 500);
+                    });
+                })();
+            )";
+            coreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(preScript);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // Actions
     // ─────────────────────────────────────────────────────────────────
     void MainWindow::PlayButton_Click(IInspectable const&, RoutedEventArgs const&)
@@ -579,7 +1038,21 @@ namespace winrt::wallmane::implementation
         if (!path.empty())
         {
             WowPathBox().Text(path);
-            try { ApplicationData::Current().LocalSettings().Values().Insert(L"WowPath", box_value(hstring(path))); }
+            try { 
+                char* appdata = nullptr;
+                size_t len = 0;
+                _dupenv_s(&appdata, &len, "APPDATA");
+                if (appdata) {
+                    std::filesystem::path configPath = std::filesystem::path(appdata) / L"Wallmane";
+                    free(appdata);
+                    std::filesystem::create_directories(configPath);
+                    FILE* f;
+                    if (_wfopen_s(&f, (configPath / L"wowpath.txt").c_str(), L"w, ccs=UTF-8") == 0) {
+                        fwprintf(f, L"%s", path.c_str());
+                        fclose(f);
+                    }
+                }
+            }
             catch (...) {}
         }
     }

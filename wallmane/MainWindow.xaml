@@ -65,6 +65,7 @@
 
             <NavigationView.MenuItems>
                 <NavigationViewItem Icon="Home" Content="Home" Tag="home_page" IsSelected="True"/>
+                <NavigationViewItem Icon="Contact" Content="Characters" Tag="characters_page"/>
                 <NavigationViewItem Icon="Library" Content="Addons" Tag="addons_page"/>
                 <NavigationViewItem Icon="Setting" Content="Settings" Tag="settings_page"/>
             </NavigationView.MenuItems>
@@ -213,6 +214,118 @@
                             <!-- Installed cards will be injected via C++ -->
                         </StackPanel>
                     </ScrollViewer>
+                </Grid>
+
+                <!-- ─────────── CHARACTERS PAGE ─────────── -->
+                <Grid x:Name="CharactersPage" Visibility="Collapsed" Margin="24,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="260"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left Sidebar (Cards) -->
+                    <Grid Grid.Column="0" Margin="0,0,20,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Spacing="5" Margin="0,0,0,15">
+                            <TextBlock Text="YOUR CHARACTERS" FontSize="14" FontWeight="Bold"
+                                       Foreground="#C8993B" CharacterSpacing="300"/>
+                            <TextBlock Text="Select a character to view their live armory stats." Foreground="#88FFFFFF" FontSize="12" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden">
+                            <StackPanel x:Name="CharacterCardsPanel" Spacing="10"/>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- Right Panel (Native Armory + 3D Model) -->
+                    <Border Grid.Column="1" Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1" CornerRadius="8" Padding="16">
+                        <Grid>
+                            <!-- Default placeholder -->
+                            <Grid x:Name="ArmoryPlaceholder" Visibility="Visible">
+                                <TextBlock Text="Select a character from the left to load their armory." 
+                                           Foreground="#66FFFFFF" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            
+                            <!-- The Native Layout Container -->
+                            <Grid x:Name="NativeArmoryLayout" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/> <!-- Header -->
+                                    <RowDefinition Height="360"/> <!-- Main Body -->
+                                    <RowDefinition Height="Auto"/> <!-- Stats -->
+                                </Grid.RowDefinitions>
+
+                                <!-- Header -->
+                                <Grid Grid.Row="0" Margin="0,0,0,20">
+                                    <StackPanel Orientation="Vertical">
+                                        <TextBlock x:Name="CharNameBlock" Text="Character Name" FontSize="28" FontWeight="Bold" Foreground="#E8B84B"/>
+                                        <TextBlock x:Name="CharTitleBlock" Text="Level 80, Icecrown" FontSize="14" Foreground="#88FFFFFF"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Vertical" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <TextBlock x:Name="CharPointsBlock" Text="0" FontSize="28" FontWeight="Bold" Foreground="#88FFFFFF" HorizontalAlignment="Right"/>
+                                        <TextBlock Text="Achievement Points" FontSize="10" Foreground="#66FFFFFF" HorizontalAlignment="Right"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Main Body -->
+                                <Grid Grid.Row="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/> <!-- Left Gear -->
+                                        <ColumnDefinition Width="*"/>    <!-- Center Model -->
+                                        <ColumnDefinition Width="Auto"/> <!-- Right Gear -->
+                                        <ColumnDefinition Width="220"/>  <!-- Far Right Details -->
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Left Gear -->
+                                    <StackPanel x:Name="LeftGearPanel" Grid.Column="0" Spacing="4" VerticalAlignment="Center"/>
+
+                                    <!-- Center 3D Model (WebView2) and Bottom Weapons -->
+                                    <Grid Grid.Column="1" Margin="10,0,10,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        
+                                        <!-- Model -->
+                                        <WebView2 x:Name="ArmoryWebView" Grid.Row="0"
+                                                  NavigationCompleted="ArmoryWebView_NavigationCompleted"
+                                                  CoreWebView2Initialized="ArmoryWebView_CoreWebView2Initialized"/>
+                                        
+                                        <!-- Bottom Weapons -->
+                                        <StackPanel x:Name="BottomGearPanel" Grid.Row="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                                    </Grid>
+
+                                    <!-- Right Gear -->
+                                    <StackPanel x:Name="RightGearPanel" Grid.Column="2" Spacing="4" VerticalAlignment="Center"/>
+
+                                    <!-- Far Right Details -->
+                                    <StackPanel x:Name="RightDetailsPanel" Grid.Column="3" Spacing="15" Margin="20,0,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Specialization" Foreground="#E8B84B" FontWeight="Bold" Margin="0,0,0,5"/>
+                                            <TextBlock x:Name="CharSpecBlock" Text="Loading..." Foreground="White" FontSize="12"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Bottom Stats -->
+                                <Grid Grid.Row="2" Margin="0,16,0,0" x:Name="StatsGrid">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel x:Name="StatsCol0" Grid.Column="0" Spacing="4"/>
+                                    <StackPanel x:Name="StatsCol1" Grid.Column="1" Spacing="4"/>
+                                    <StackPanel x:Name="StatsCol2" Grid.Column="2" Spacing="4"/>
+                                    <StackPanel x:Name="StatsCol3" Grid.Column="3" Spacing="4"/>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+                    </Border>
                 </Grid>
 
                 <!-- ─────────── SETTINGS PAGE ─────────── -->

@@ -29,6 +29,11 @@ namespace winrt::wallmane::implementation
         void TabInstalled_Click(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
         void LoadInstalledAddons();
 
+        void LoadCharacters();
+        void UpdateArmoryUI(winrt::hstring const& jsonStr);
+        void ArmoryWebView_NavigationCompleted(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& sender, winrt::Microsoft::Web::WebView2::Core::CoreWebView2NavigationCompletedEventArgs const& args);
+        void ArmoryWebView_CoreWebView2Initialized(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& sender, winrt::Microsoft::UI::Xaml::Controls::CoreWebView2InitializedEventArgs const& args);
+
     private:
         Microsoft::UI::Xaml::DispatcherTimer m_lightningTimer{ nullptr };
         int m_lightningCountdown = 0;
