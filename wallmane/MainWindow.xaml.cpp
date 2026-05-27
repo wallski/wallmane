@@ -707,7 +707,12 @@ namespace winrt::wallmane::implementation
         else if (itemQuality == L"legendary") qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 255, 128, 0);    // Orange
         else if (itemQuality == L"artifact")  qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 229, 204, 128);  // Gold
 
-        auto tooltip = Microsoft::UI::Xaml::Controls::ToolTip();
+        // Create tooltip content (reuse across calls)
+        if (!m_itemTooltipFlyout)
+        {
+            m_itemTooltipFlyout = Microsoft::UI::Xaml::Controls::Flyout();
+            m_itemTooltipFlyout.Placement(Microsoft::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::Top);
+        }
 
         auto tooltipBorder = Microsoft::UI::Xaml::Controls::Border();
         tooltipBorder.Background(Microsoft::UI::Xaml::Media::SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(240, 10, 10, 15)));
@@ -723,10 +728,37 @@ namespace winrt::wallmane::implementation
         tooltipText.FontWeight(Microsoft::UI::Text::FontWeights::SemiBold());
 
         tooltipBorder.Child(tooltipText);
-        tooltip.Content(tooltipBorder);
-        // Use default placement for tooltips (avoids referencing unavailable enum)
+        m_itemTooltipFlyout.Content(tooltipBorder);
 
-        Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(element, tooltip);
+        // Show/hide flyout with delay on pointer enter/exit
+        auto self = get_strong();
+        element.PointerEntered([this, self, element](auto const&, winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const&) mutable {
+            // Cancel any pending hide
+            if (m_tooltipDelayTimer)
+                m_tooltipDelayTimer.Stop();
+
+            // Show after a short delay to avoid flicker
+            if (!m_tooltipDelayTimer)
+            {
+                m_tooltipDelayTimer = Microsoft::UI::Xaml::DispatcherTimer();
+                m_tooltipDelayTimer.Interval(std::chrono::milliseconds(200));
+                m_tooltipDelayTimer.Tick([this, self, element](auto const&, auto const&) mutable {
+                    if (m_itemTooltipFlyout)
+                        m_itemTooltipFlyout.ShowAt(element);
+                    if (m_tooltipDelayTimer)
+                        m_tooltipDelayTimer.Stop();
+                });
+            }
+            m_tooltipDelayTimer.Start();
+        });
+
+        element.PointerExited([this, self](auto const&, winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const&) mutable {
+            // Hide tooltip on exit
+            if (m_tooltipDelayTimer)
+                m_tooltipDelayTimer.Stop();
+            if (m_itemTooltipFlyout)
+                m_itemTooltipFlyout.Hide();
+        });
     }
 
     void MainWindow::UpdateArmoryUI(winrt::hstring const& wjsonStr)

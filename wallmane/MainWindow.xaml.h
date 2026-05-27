@@ -37,6 +37,8 @@ namespace winrt::wallmane::implementation
     private:
         Microsoft::UI::Xaml::DispatcherTimer m_lightningTimer{ nullptr };
         int m_lightningCountdown = 0;
+        Microsoft::UI::Xaml::Controls::Flyout m_itemTooltipFlyout{ nullptr };
+        Microsoft::UI::Xaml::DispatcherTimer m_tooltipDelayTimer{ nullptr };
 
         void SetupCustomTitleBar();
         void StartAnimations();
