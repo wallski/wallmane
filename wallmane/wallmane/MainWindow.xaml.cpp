@@ -47,7 +47,7 @@ namespace winrt::wallmane::implementation
         SetupCustomTitleBar();
 
         auto appWindow = this->AppWindow();
-        appWindow.Resize({ 1080, 660 });
+        appWindow.Resize({ 1080, 730 });
         
         auto presenter = appWindow.Presenter().as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>();
         presenter.IsResizable(false);
