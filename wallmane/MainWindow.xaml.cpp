@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
+#include "resource.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
 #endif
@@ -53,6 +54,25 @@ namespace winrt::wallmane::implementation
         auto presenter = appWindow.Presenter().as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>();
         presenter.IsResizable(false);
         presenter.IsMaximizable(false);
+
+        // Set the window icon from resource IDI_APPICON
+        HWND hwnd = nullptr;
+        this->try_as<::IWindowNative>()->get_WindowHandle(&hwnd);
+        if (hwnd)
+        {
+            HICON hIcon = (HICON)::LoadImage(
+                ::GetModuleHandle(nullptr),
+                MAKEINTRESOURCE(IDI_APPICON),
+                IMAGE_ICON,
+                0, 0,
+                LR_DEFAULTSIZE | LR_SHARED
+            );
+            if (hIcon)
+            {
+                ::SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+                ::SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+            }
+        }
 
         try
         {
