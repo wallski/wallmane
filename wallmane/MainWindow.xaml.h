@@ -21,6 +21,11 @@ namespace winrt::wallmane::implementation
             Microsoft::UI::Xaml::RoutedEventArgs const& e);
         void CopyMagnet_Click(winrt::Windows::Foundation::IInspectable const& sender,
             Microsoft::UI::Xaml::RoutedEventArgs const& e);
+        void SaveRealmlist_Click(winrt::Windows::Foundation::IInspectable const& sender,
+            Microsoft::UI::Xaml::RoutedEventArgs const& e);
+        void SetWarmaneRealmlist_Click(winrt::Windows::Foundation::IInspectable const& sender,
+            Microsoft::UI::Xaml::RoutedEventArgs const& e);
+        void RefreshRealmlistUI();
 
         void SearchAddonsBtn_Click(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
         void AddonSearchBox_KeyDown(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& e);

@@ -8,11 +8,134 @@
 #include <regex>
 #include <fstream>
 #include <sstream>
+#include "json.hpp"
 
 namespace fs = std::filesystem;
+using json = nlohmann::json;
 
 namespace Core
 {
+    static fs::path GetConfigDirectory()
+    {
+        char* appdata = nullptr;
+        size_t len = 0;
+        _dupenv_s(&appdata, &len, "APPDATA");
+        if (appdata) {
+            fs::path p = fs::path(appdata) / L"Wallmane";
+            free(appdata);
+            std::error_code ec;
+            fs::create_directories(p, ec);
+            return p;
+        }
+        return fs::current_path();
+    }
+
+    std::vector<TrackedAddonMeta> AddonManager::LoadTrackedAddons()
+    {
+        std::vector<TrackedAddonMeta> list;
+        try {
+            fs::path file = GetConfigDirectory() / L"installed_addons.json";
+            if (fs::exists(file)) {
+                std::ifstream in(file);
+                json j;
+                in >> j;
+                if (j.contains("addons") && j["addons"].is_array()) {
+                    for (const auto& item : j["addons"]) {
+                        TrackedAddonMeta meta;
+                        std::string f = item.value("folderName", "");
+                        std::string p = item.value("pageUrl", "");
+                        std::string u = item.value("lastUpdate", "");
+
+                        int szF = MultiByteToWideChar(CP_UTF8, 0, f.c_str(), -1, NULL, 0);
+                        meta.folderName.resize(szF ? szF - 1 : 0);
+                        if (szF > 1) MultiByteToWideChar(CP_UTF8, 0, f.c_str(), -1, &meta.folderName[0], szF);
+
+                        int szP = MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, NULL, 0);
+                        meta.pageUrl.resize(szP ? szP - 1 : 0);
+                        if (szP > 1) MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, &meta.pageUrl[0], szP);
+
+                        int szU = MultiByteToWideChar(CP_UTF8, 0, u.c_str(), -1, NULL, 0);
+                        meta.lastUpdate.resize(szU ? szU - 1 : 0);
+                        if (szU > 1) MultiByteToWideChar(CP_UTF8, 0, u.c_str(), -1, &meta.lastUpdate[0], szU);
+
+                        list.push_back(meta);
+                    }
+                }
+            }
+        } catch(...) {}
+        return list;
+    }
+
+    void AddonManager::SaveTrackedAddons(const std::vector<TrackedAddonMeta>& addons)
+    {
+        try {
+            json j;
+            j["addons"] = json::array();
+            for (const auto& item : addons) {
+                int szF = WideCharToMultiByte(CP_UTF8, 0, item.folderName.c_str(), -1, NULL, 0, NULL, NULL);
+                std::string f(szF ? szF - 1 : 0, 0);
+                if (szF > 1) WideCharToMultiByte(CP_UTF8, 0, item.folderName.c_str(), -1, &f[0], szF, NULL, NULL);
+
+                int szP = WideCharToMultiByte(CP_UTF8, 0, item.pageUrl.c_str(), -1, NULL, 0, NULL, NULL);
+                std::string p(szP ? szP - 1 : 0, 0);
+                if (szP > 1) WideCharToMultiByte(CP_UTF8, 0, item.pageUrl.c_str(), -1, &p[0], szP, NULL, NULL);
+
+                int szU = WideCharToMultiByte(CP_UTF8, 0, item.lastUpdate.c_str(), -1, NULL, 0, NULL, NULL);
+                std::string u(szU ? szU - 1 : 0, 0);
+                if (szU > 1) WideCharToMultiByte(CP_UTF8, 0, item.lastUpdate.c_str(), -1, &u[0], szU, NULL, NULL);
+
+                json entry;
+                entry["folderName"] = f;
+                entry["pageUrl"] = p;
+                entry["lastUpdate"] = u;
+                j["addons"].push_back(entry);
+            }
+
+            fs::path file = GetConfigDirectory() / L"installed_addons.json";
+            std::ofstream out(file);
+            out << j.dump(4);
+        } catch(...) {}
+    }
+
+    void AddonManager::TrackAddon(const std::wstring& folderName, const std::wstring& pageUrl, const std::wstring& lastUpdate)
+    {
+        auto tracked = LoadTrackedAddons();
+        bool found = false;
+        for (auto& t : tracked) {
+            if (_wcsicmp(t.folderName.c_str(), folderName.c_str()) == 0) {
+                if (!pageUrl.empty()) t.pageUrl = pageUrl;
+                if (!lastUpdate.empty()) t.lastUpdate = lastUpdate;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            TrackedAddonMeta meta;
+            meta.folderName = folderName;
+            meta.pageUrl = pageUrl;
+            meta.lastUpdate = lastUpdate;
+            tracked.push_back(meta);
+        }
+        SaveTrackedAddons(tracked);
+    }
+
+    winrt::Windows::Foundation::IAsyncOperation<winrt::hstring> AddonManager::GetLatestUpdateDateAsync(std::wstring pageUrl)
+    {
+        if (pageUrl.empty()) co_return L"";
+        try {
+            winrt::Windows::Web::Http::HttpClient client;
+            winrt::hstring html = co_await client.GetStringAsync(winrt::Windows::Foundation::Uri(pageUrl));
+            std::wstring htmlStr = html.c_str();
+
+            std::wregex rx(L"Last Update</span>\\s*<span[^>]*>([^<]+)</span>", std::regex_constants::icase);
+            std::wsmatch m;
+            if (std::regex_search(htmlStr, m, rx)) {
+                co_return winrt::hstring(m[1].str());
+            }
+        } catch(...) {}
+        co_return L"";
+    }
+
     std::vector<Addon> AddonManager::GetInstalledAddons(const std::wstring& wowPath)
     {
         std::vector<Addon> list;
@@ -20,6 +143,8 @@ namespace Core
 
         auto addonsDir = fs::path(wowPath).parent_path() / L"Interface" / L"AddOns";
         if (!fs::exists(addonsDir)) return list;
+
+        auto trackedList = LoadTrackedAddons();
 
         std::error_code ec;
         for (auto& entry : fs::directory_iterator(addonsDir, ec))
@@ -36,6 +161,14 @@ namespace Core
                 a.name = folderName; // fallback
                 a.description = L"Local Addon";
                 a.isInstalled = true;
+
+                for (const auto& t : trackedList) {
+                    if (_wcsicmp(t.folderName.c_str(), folderName.c_str()) == 0) {
+                        a.pageUrl = t.pageUrl;
+                        a.lastUpdate = t.lastUpdate;
+                        break;
+                    }
+                }
 
                 try {
                     std::ifstream f(tocPath);
@@ -282,6 +415,9 @@ namespace Core
             }
 
             ExtractAndFlatten(tempZip, addonsDir);
+
+            winrt::hstring latestDate = co_await GetLatestUpdateDateAsync(addon.pageUrl);
+            TrackAddon(addon.folderName, addon.pageUrl, latestDate.c_str());
 
             std::error_code ec;
             fs::remove(tempZip, ec);

@@ -307,7 +307,7 @@ namespace winrt::wallmane::implementation
 
                 TotalPlayersLabel().Text(L"Total online: " + to_hstring(totalPlayers));
 
-                uint64_t playtimeSeconds = Core::WowDetector::GetTotalPlaytimeSeconds();
+                uint64_t playtimeSeconds = Core::WowDetector::GetTotalPlaytimeSeconds(WowPathBox().Text().c_str());
                 PlaytimeLabel().Text(Core::WowDetector::FormatPlaytime(playtimeSeconds));
             });
     }
@@ -332,6 +332,10 @@ namespace winrt::wallmane::implementation
         else if (tag == L"characters_page")
         {
             LoadCharacters();
+        }
+        else if (tag == L"settings_page")
+        {
+            RefreshRealmlistUI();
         }
     }
 
@@ -540,23 +544,69 @@ namespace winrt::wallmane::implementation
 
             textPanel.Children().Append(name);
             textPanel.Children().Append(desc);
+
+            // Show last updated date if tracked
+            if (!addon.lastUpdate.empty())
+            {
+                TextBlock updateDate;
+                updateDate.Text(L"Last updated: " + addon.lastUpdate);
+                updateDate.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(120, 255, 255, 255)));
+                updateDate.FontSize(11);
+                textPanel.Children().Append(updateDate);
+            }
+
             Grid::SetColumn(textPanel, 0);
 
-            Button tag;
-            tag.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 50, 50)));
-            tag.CornerRadius({ 4,4,4,4 });
-            tag.Padding({ 10,4,10,4 });
-            tag.Content(box_value(L"Remove"));
-            tag.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 255, 100, 100)));
-            tag.VerticalAlignment(VerticalAlignment::Center);
-            Grid::SetColumn(tag, 1);
+            // Buttons panel
+            StackPanel btnPanel;
+            btnPanel.Orientation(Orientation::Horizontal);
+            btnPanel.Spacing(8);
+            btnPanel.VerticalAlignment(VerticalAlignment::Center);
+            Grid::SetColumn(btnPanel, 1);
 
-            tag.Click([this, addon, tag](auto, auto) mutable {
+            // "Update" badge - only shown if addon has a tracked pageUrl
+            if (!addon.pageUrl.empty())
+            {
+                Button updateBtn;
+                updateBtn.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(60, 50, 200, 100)));
+                updateBtn.CornerRadius({ 4,4,4,4 });
+                updateBtn.Padding({ 10,4,10,4 });
+                updateBtn.Content(box_value(L"↑ Update"));
+                updateBtn.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 80, 220, 120)));
+                updateBtn.VerticalAlignment(VerticalAlignment::Center);
+                updateBtn.Tag(box_value(winrt::hstring(addon.folderName)));
+
+                updateBtn.Click([this, addon](auto sender, auto) mutable {
+                    auto btn = sender.as<Button>();
+                    btn.IsEnabled(false);
+                    btn.Content(box_value(L"Updating..."));
+                    std::wstring p = WowPathBox().Text().c_str();
+
+                    [](auto self, auto a, auto path, auto btn) -> winrt::fire_and_forget {
+                        co_await Core::AddonManager::InstallAddonAsync(a, path);
+                        self->DispatcherQueue().TryEnqueue([self, btn]() {
+                            self->LoadInstalledAddons();
+                        });
+                    }(get_strong(), addon, p, btn);
+                });
+
+                btnPanel.Children().Append(updateBtn);
+            }
+
+            Button removeTag;
+            removeTag.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(40, 200, 50, 50)));
+            removeTag.CornerRadius({ 4,4,4,4 });
+            removeTag.Padding({ 10,4,10,4 });
+            removeTag.Content(box_value(L"Remove"));
+            removeTag.Foreground(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(255, 255, 100, 100)));
+            removeTag.VerticalAlignment(VerticalAlignment::Center);
+
+            removeTag.Click([this, addon, removeTag](auto, auto) mutable {
                 std::wstring p = WowPathBox().Text().c_str();
                 if (p.empty()) return;
 
-                tag.IsEnabled(false);
-                tag.Content(box_value(L"Removing..."));
+                removeTag.IsEnabled(false);
+                removeTag.Content(box_value(L"Removing..."));
 
                 [](auto self, auto folder, auto path) -> winrt::fire_and_forget {
                     co_await winrt::resume_background();
@@ -571,8 +621,10 @@ namespace winrt::wallmane::implementation
                     }(get_strong(), addon.folderName, p);
                 });
 
+            btnPanel.Children().Append(removeTag);
+
             grid.Children().Append(textPanel);
-            grid.Children().Append(tag);
+            grid.Children().Append(btnPanel);
             card.Child(grid);
             InstalledPanel().Children().Append(card);
         }
@@ -1140,7 +1192,29 @@ namespace winrt::wallmane::implementation
             BrowseWowPath_Click(nullptr, nullptr);
             return;
         }
-        if (!Core::WowDetector::LaunchWow(path))
+
+        auto lifetime = get_strong();
+        auto dispatcher = DispatcherQueue();
+
+        bool launched = Core::WowDetector::LaunchWow(path, [this, lifetime, dispatcher](uint64_t duration) {
+            dispatcher.TryEnqueue([this, lifetime]() {
+                uint64_t playtimeSeconds = Core::WowDetector::GetTotalPlaytimeSeconds(WowPathBox().Text().c_str());
+                PlaytimeLabel().Text(Core::WowDetector::FormatPlaytime(playtimeSeconds));
+
+                // Restore window if it was minimized
+                HWND hwnd = 0;
+                this->m_inner.as<::IWindowNative>()->get_WindowHandle(&hwnd);
+                if (hwnd) {
+                    ShowWindow(hwnd, SW_RESTORE);
+                    SetForegroundWindow(hwnd);
+                }
+
+                // Reset Discord RPC back to launcher
+                Core::DiscordRPC::SetPresence("In Launcher", "Browsing");
+            });
+        });
+
+        if (!launched)
         {
             ContentDialog dlg;
             dlg.Title(box_value(L"Launch Failed"));
@@ -1157,11 +1231,9 @@ namespace winrt::wallmane::implementation
             // Minimize to tray logic
             if (MinimizeOnPlayToggle().IsChecked().GetBoolean())
             {
-                auto appWindow = this->AppWindow();
-                // Minimize by invoking P/Invoke ShowWindow since AppWindow doesn't have a direct minimize yet
                 HWND hwnd = 0;
                 this->m_inner.as<::IWindowNative>()->get_WindowHandle(&hwnd);
-                ShowWindow(hwnd, SW_MINIMIZE);
+                if (hwnd) ShowWindow(hwnd, SW_MINIMIZE);
             }
         }
     }
@@ -1220,6 +1292,56 @@ namespace winrt::wallmane::implementation
             L"&tr=udp%3A%2F%2Ftracker.openbittorrent.com%3A80%2Fannounce"
             L"&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce");
         Windows::ApplicationModel::DataTransfer::Clipboard::SetContent(dp);
+    }
+
+    void MainWindow::RefreshRealmlistUI()
+    {
+        std::wstring path = WowPathBox().Text().c_str();
+        if (path.empty()) return;
+
+        std::wstring current = Core::WowDetector::ReadRealmlist(path);
+        CurrentRealmlistLabel().Text(L"Active Realmlist: " + current);
+        RealmlistBox().Text(current);
+    }
+
+    void MainWindow::SaveRealmlist_Click(IInspectable const&, RoutedEventArgs const&)
+    {
+        std::wstring path = WowPathBox().Text().c_str();
+        if (path.empty())
+        {
+            RealmlistStatusText().Text(L"⚠ Set your WoW path in Settings first.");
+            return;
+        }
+
+        if (Core::WowDetector::IsWowRunning())
+        {
+            RealmlistStatusText().Text(L"⚠ Cannot switch while WoW is running.");
+            return;
+        }
+
+        std::wstring newRealm = RealmlistBox().Text().c_str();
+        if (newRealm.empty())
+        {
+            RealmlistStatusText().Text(L"⚠ Please enter a realmlist address.");
+            return;
+        }
+
+        bool ok = Core::WowDetector::SetRealmlist(path, newRealm);
+        if (ok)
+        {
+            RealmlistStatusText().Text(L"✓ Realmlist saved. WTF profile swapped.");
+            CurrentRealmlistLabel().Text(L"Active Realmlist: " + newRealm);
+        }
+        else
+        {
+            RealmlistStatusText().Text(L"✗ Failed to write realmlist.wtf");
+        }
+    }
+
+    void MainWindow::SetWarmaneRealmlist_Click(IInspectable const&, RoutedEventArgs const&)
+    {
+        RealmlistBox().Text(L"logon.warmane.com");
+        SaveRealmlist_Click(nullptr, nullptr);
     }
 
 
