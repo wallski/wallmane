@@ -19,7 +19,8 @@ Wallmane streamlines launcher operations while integrating deep live data from W
 ### Live Armory & Interactive 3D Inspection
 
 <p align="center">
-  <img src="pics/1.png" alt="Wallmane Armory View" width="100%" />
+  <img src="pics/6.png" alt="Armory View with Item Tooltips" width="49%" />
+  <img src="pics/1.png" alt="Armory View 3D Character Model" width="49%" />
 </p>
 
 - Inspect all characters associated with your account accounts and WTF data.
@@ -32,8 +33,8 @@ Wallmane streamlines launcher operations while integrating deep live data from W
 ### Addon Management & Discovery
 
 <p align="center">
-  <img src="pics/3.png" alt="Addons Discovery" width="48%" />
-  <img src="pics/2.png" alt="Addons Installed" width="48%" />
+  <img src="pics/3.png" alt="Addons Discovery" width="49%" />
+  <img src="pics/2.png" alt="Addons Installed" width="49%" />
 </p>
 
 - **Discover**: Search and install popular WotLK 3.3.5a addons with one click directly from verified archives.
@@ -101,7 +102,7 @@ Wallmane streamlines launcher operations while integrating deep live data from W
 
 - **Addon Extraction**: Built using Windows native `tar.exe` for zero external dependencies.
 - **Security & Privacy**: No login credentials or account passwords are required or stored.
-- **PCH Compilation**: Large WinRT header dependencies utilize precompiled headers with `/Zm300` heap allocation options.
+- **PCH Compilation**: Large WinRT header dependencies utilize precompiled headers with `/Zm500` heap allocation options.
 
 ---
 
