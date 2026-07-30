@@ -330,10 +330,23 @@
 
                 <!-- ─────────── SETTINGS PAGE ─────────── -->
                 <Grid x:Name="SettingsPage" Visibility="Collapsed" Margin="24,20">
-                    <ScrollViewer VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="20" MaxWidth="480" HorizontalAlignment="Left" Padding="0,0,0,32">
-                        <TextBlock Text="SETTINGS" FontSize="14" FontWeight="Bold"
-                                   Foreground="#C8993B" CharacterSpacing="300"/>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Page title spans both columns -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
+                               Text="SETTINGS" FontSize="14" FontWeight="Bold"
+                               Foreground="#C8993B" CharacterSpacing="300" Margin="0,0,0,20"/>
+
+                    <!-- ── LEFT COLUMN ── -->
+                    <StackPanel Grid.Row="1" Grid.Column="0" Spacing="16">
 
                         <!-- WoW Path -->
                         <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
@@ -355,32 +368,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Realmlist Configuration -->
-                        <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
-                                CornerRadius="8" Padding="16">
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="REALMLIST CONFIGURATION" FontSize="10" Foreground="#C8993B"
-                                           CharacterSpacing="200" FontWeight="Bold"/>
-                                <TextBlock Text="Automatic WTF backup &amp; profile swapping on realmlist change." Foreground="#88FFFFFF" FontSize="12"/>
-                                <TextBlock x:Name="CurrentRealmlistLabel" Text="Active Realmlist: logon.warmane.com" Foreground="#E8B84B" FontSize="12" FontWeight="SemiBold"/>
-                                <Grid ColumnSpacing="10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="RealmlistBox" Grid.Column="0" PlaceholderText="e.g. logon.warmane.com"
-                                             Background="#22FFFFFF" BorderBrush="#44C8993B" Foreground="White"/>
-                                    <Button Content="Save" Grid.Column="1" Click="SaveRealmlist_Click"
-                                            Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
-                                    <Button Content="Set Warmane" Grid.Column="2" Click="SetWarmaneRealmlist_Click"
-                                            Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
-                                </Grid>
-                                <TextBlock x:Name="RealmlistStatusText" Text="" Foreground="#88FFFFFF" FontSize="11"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Cache -->
+                        <!-- Maintenance -->
                         <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
                                 CornerRadius="8" Padding="16">
                             <StackPanel Spacing="10">
@@ -405,9 +393,42 @@
                         </Border>
 
                         <!-- General Options -->
-                        <CheckBox x:Name="MinimizeOnPlayToggle" Content="Minimize Launcher when playing" Foreground="#88FFFFFF" FontSize="12" IsChecked="True"/>
+                        <CheckBox x:Name="MinimizeOnPlayToggle" Content="Minimize Launcher when playing"
+                                  Foreground="#88FFFFFF" FontSize="12" IsChecked="True"/>
                     </StackPanel>
-                    </ScrollViewer>
+
+                    <!-- ── RIGHT COLUMN ── -->
+                    <StackPanel Grid.Row="1" Grid.Column="2" Spacing="16">
+
+                        <!-- Realmlist Configuration -->
+                        <Border Background="#1A0D0D1A" BorderBrush="#33C8993B" BorderThickness="1"
+                                CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="REALMLIST CONFIGURATION" FontSize="10" Foreground="#C8993B"
+                                           CharacterSpacing="200" FontWeight="Bold"/>
+                                <TextBlock Text="Automatic WTF backup &amp; profile swapping on realmlist change."
+                                           Foreground="#88FFFFFF" FontSize="12" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="CurrentRealmlistLabel" Text="Active Realmlist: logon.warmane.com"
+                                           Foreground="#E8B84B" FontSize="12" FontWeight="SemiBold"/>
+                                <Grid ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="RealmlistBox" Grid.Column="0" PlaceholderText="e.g. logon.warmane.com"
+                                             Background="#22FFFFFF" BorderBrush="#44C8993B" Foreground="White"/>
+                                    <Button Content="Save" Grid.Column="1" Click="SaveRealmlist_Click"
+                                            Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
+                                    <Button Content="Set Warmane" Grid.Column="2" Click="SetWarmaneRealmlist_Click"
+                                            Background="#33C8993B" BorderBrush="#55C8993B" Foreground="#C8993B"/>
+                                </Grid>
+                                <TextBlock x:Name="RealmlistStatusText" Text="" Foreground="#88FFFFFF" FontSize="11"/>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+
                 </Grid>
 
             </Grid>
