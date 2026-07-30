@@ -28,6 +28,12 @@
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <filesystem>
 #include <random>
+#include <map>
+#include <regex>
+#include <sstream>
+#include <winrt/Windows.Web.Http.h>
+#include <winrt/Windows.Web.Http.Headers.h>
+#include <winrt/Microsoft.UI.Xaml.Documents.h>
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
@@ -764,73 +770,404 @@ namespace winrt::wallmane::implementation
         }
     }
 
-    void MainWindow::AttachItemTooltip(Microsoft::UI::Xaml::FrameworkElement const& element, std::wstring const& itemName, std::wstring const& itemQuality)
-    {
-        if (itemName.empty()) return;
+    static winrt::Windows::UI::Color GetWoWColor(const std::wstring& className) {
+        if (className == L"q0" || className == L"poor") return Microsoft::UI::ColorHelper::FromArgb(255, 157, 157, 157); // Gray
+        if (className == L"q1" || className == L"common") return Microsoft::UI::ColorHelper::FromArgb(255, 255, 255, 255); // White
+        if (className == L"q2" || className == L"uncommon") return Microsoft::UI::ColorHelper::FromArgb(255, 30, 255, 0); // Green
+        if (className == L"q3" || className == L"rare") return Microsoft::UI::ColorHelper::FromArgb(255, 0, 112, 221); // Blue
+        if (className == L"q4" || className == L"epic") return Microsoft::UI::ColorHelper::FromArgb(255, 163, 53, 238); // Purple
+        if (className == L"q5" || className == L"legendary") return Microsoft::UI::ColorHelper::FromArgb(255, 255, 128, 0); // Orange
+        if (className == L"q6" || className == L"artifact") return Microsoft::UI::ColorHelper::FromArgb(255, 229, 204, 128); // Gold
+        if (className == L"q8") return Microsoft::UI::ColorHelper::FromArgb(255, 230, 204, 128); // Heirloom
+        
+        // Classes
+        if (className == L"c1") return Microsoft::UI::ColorHelper::FromArgb(255, 199, 156, 110); // Warrior
+        if (className == L"c2") return Microsoft::UI::ColorHelper::FromArgb(255, 245, 140, 186); // Paladin
+        if (className == L"c3") return Microsoft::UI::ColorHelper::FromArgb(255, 171, 212, 115); // Hunter
+        if (className == L"c4") return Microsoft::UI::ColorHelper::FromArgb(255, 255, 245, 105); // Rogue
+        if (className == L"c5") return Microsoft::UI::ColorHelper::FromArgb(255, 255, 255, 255); // Priest
+        if (className == L"c6") return Microsoft::UI::ColorHelper::FromArgb(255, 196, 31, 59); // Death Knight
+        if (className == L"c7") return Microsoft::UI::ColorHelper::FromArgb(255, 0, 112, 222); // Shaman
+        if (className == L"c8") return Microsoft::UI::ColorHelper::FromArgb(255, 105, 204, 240); // Mage
+        if (className == L"c9") return Microsoft::UI::ColorHelper::FromArgb(255, 148, 130, 201); // Warlock
+        if (className == L"c11") return Microsoft::UI::ColorHelper::FromArgb(255, 255, 125, 10); // Druid
+        
+        // Money
+        if (className == L"moneygold") return Microsoft::UI::ColorHelper::FromArgb(255, 229, 197, 25);
+        if (className == L"moneysilver") return Microsoft::UI::ColorHelper::FromArgb(255, 162, 162, 162);
+        if (className == L"moneycopper") return Microsoft::UI::ColorHelper::FromArgb(255, 198, 125, 63);
 
-        // Determine quality color using ColorHelper - use auto to avoid type issues
-        auto qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 255, 255, 255); // default white
+        return Microsoft::UI::ColorHelper::FromArgb(255, 220, 220, 220); // Default light gray
+    }
 
-        if (itemQuality == L"poor")       qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 157, 157, 157);  // Gray
-        else if (itemQuality == L"common")    qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 255, 255, 255);  // White
-        else if (itemQuality == L"uncommon")  qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 30, 255, 0);    // Green
-        else if (itemQuality == L"rare")      qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 0, 112, 221);  // Blue
-        else if (itemQuality == L"epic")      qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 163, 53, 238);  // Purple
-        else if (itemQuality == L"legendary") qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 255, 128, 0);    // Orange
-        else if (itemQuality == L"artifact")  qualityColor = Microsoft::UI::ColorHelper::FromArgb(255, 229, 204, 128);  // Gold
+    static std::wstring ExtractTooltipHtml(const std::wstring& jsResponse) {
+        size_t pos = jsResponse.find(L"tooltip_enus: '");
+        if (pos == std::wstring::npos) {
+            pos = jsResponse.find(L"tooltip_enus: \"");
+            if (pos == std::wstring::npos) return L"";
+            pos += 15;
+            size_t endPos = jsResponse.find(L"\"", pos);
+            while (endPos != std::wstring::npos && jsResponse[endPos - 1] == L'\\') {
+                endPos = jsResponse.find(L"\"", endPos + 1);
+            }
+            if (endPos == std::wstring::npos) return L"";
+            return jsResponse.substr(pos, endPos - pos);
+        }
+        pos += 15;
+        size_t endPos = jsResponse.find(L"'", pos);
+        while (endPos != std::wstring::npos && jsResponse[endPos - 1] == L'\\') {
+            endPos = jsResponse.find(L"'", endPos + 1);
+        }
+        if (endPos == std::wstring::npos) return L"";
+        std::wstring rawHtml = jsResponse.substr(pos, endPos - pos);
+        
+        // Unescape: \" -> ", \/ -> /, \' -> ', \n -> newline
+        std::wstring cleanHtml;
+        cleanHtml.reserve(rawHtml.size());
+        for (size_t i = 0; i < rawHtml.size(); ++i) {
+            if (rawHtml[i] == L'\\' && i + 1 < rawHtml.size()) {
+                wchar_t next = rawHtml[i + 1];
+                if (next == L'"' || next == L'/' || next == L'\'' || next == L'\\') {
+                    cleanHtml += next;
+                    ++i;
+                } else if (next == L'n') {
+                    cleanHtml += L'\n';
+                    ++i;
+                } else {
+                    cleanHtml += L'\\';
+                }
+            } else {
+                cleanHtml += rawHtml[i];
+            }
+        }
+        return cleanHtml;
+    }
 
-        // Create tooltip content (reuse across calls)
-        if (!m_itemTooltipFlyout)
-        {
-            m_itemTooltipFlyout = Microsoft::UI::Xaml::Controls::Flyout();
-            m_itemTooltipFlyout.Placement(Microsoft::UI::Xaml::Controls::Primitives::FlyoutPlacementMode::Top);
+    static std::vector<std::wstring> GetTopLevelTables(const std::wstring& html) {
+        std::vector<std::wstring> tables;
+        size_t pos = 0;
+        while (true) {
+            size_t start = html.find(L"<table", pos);
+            if (start == std::wstring::npos) break;
+            
+            int nest = 1;
+            size_t searchPos = start + 6;
+            size_t end = std::wstring::npos;
+            while (nest > 0 && searchPos < html.size()) {
+                size_t nextOpen = html.find(L"<table", searchPos);
+                size_t nextClose = html.find(L"</table>", searchPos);
+                if (nextClose == std::wstring::npos) break;
+                
+                if (nextOpen != std::wstring::npos && nextOpen < nextClose) {
+                    nest++;
+                    searchPos = nextOpen + 6;
+                } else {
+                    nest--;
+                    if (nest == 0) {
+                        end = nextClose;
+                    }
+                    searchPos = nextClose + 8;
+                }
+            }
+            if (end != std::wstring::npos) {
+                tables.push_back(html.substr(start, end + 8 - start));
+                pos = end + 8;
+            } else {
+                break;
+            }
+        }
+        return tables;
+    }
+
+    static std::vector<std::wstring> GetRows(const std::wstring& tableContent) {
+        std::vector<std::wstring> rows;
+        size_t pos = 0;
+        while (true) {
+            size_t start = tableContent.find(L"<tr", pos);
+            if (start == std::wstring::npos) break;
+            size_t end = tableContent.find(L"</tr>", start);
+            if (end == std::wstring::npos) break;
+            rows.push_back(tableContent.substr(start, end + 5 - start));
+            pos = end + 5;
+        }
+        return rows;
+    }
+
+    static std::vector<std::wstring> GetCells(const std::wstring& rowContent) {
+        std::vector<std::wstring> cells;
+        size_t pos = 0;
+        while (true) {
+            size_t start = rowContent.find(L"<td", pos);
+            if (start == std::wstring::npos) {
+                start = rowContent.find(L"<th", pos);
+            }
+            if (start == std::wstring::npos) break;
+            
+            size_t end = rowContent.find(L"</td>", start);
+            size_t endTagLen = 5;
+            if (end == std::wstring::npos) {
+                end = rowContent.find(L"</th>", start);
+                endTagLen = 5;
+            }
+            if (end == std::wstring::npos) break;
+            
+            size_t openTagEnd = rowContent.find(L">", start);
+            if (openTagEnd == std::wstring::npos || openTagEnd > end) break;
+            
+            cells.push_back(rowContent.substr(openTagEnd + 1, end - (openTagEnd + 1)));
+            pos = end + endTagLen;
+        }
+        return cells;
+    }
+
+    static TextBlock ParseInlineHtml(const std::wstring& inlineHtml) {
+        TextBlock tb;
+        tb.TextWrapping(TextWrapping::Wrap);
+        
+        size_t pos = 0;
+        struct StyleState {
+            winrt::Windows::UI::Color color;
+            bool isBold;
+            bool isSmall;
+        };
+        std::vector<StyleState> styleStack;
+        styleStack.push_back({ Microsoft::UI::ColorHelper::FromArgb(255, 220, 220, 220), false, false });
+        
+        auto getActiveColor = [&]() { return styleStack.back().color; };
+        auto getActiveBold = [&]() { return styleStack.back().isBold; };
+        auto getActiveSmall = [&]() { return styleStack.back().isSmall; };
+        
+        while (pos < inlineHtml.size()) {
+            if (inlineHtml[pos] == L'<') {
+                size_t tagEnd = inlineHtml.find(L'>', pos);
+                if (tagEnd == std::wstring::npos) {
+                    winrt::Microsoft::UI::Xaml::Documents::Run run;
+                    run.Text(inlineHtml.substr(pos));
+                    run.Foreground(SolidColorBrush(getActiveColor()));
+                    if (getActiveBold()) run.FontWeight(winrt::Microsoft::UI::Text::FontWeights::Bold());
+                    if (getActiveSmall()) run.FontSize(10);
+                    tb.Inlines().Append(run);
+                    break;
+                }
+                
+                std::wstring tag = inlineHtml.substr(pos + 1, tagEnd - pos - 1);
+                pos = tagEnd + 1;
+                
+                if (tag.rfind(L"/", 0) == 0) {
+                    if (styleStack.size() > 1) {
+                        styleStack.pop_back();
+                    }
+                } else if (tag == L"br" || tag == L"br/" || tag == L"br /" || tag.rfind(L"br ", 0) == 0) {
+                    // Line break — insert a LineBreak inline element
+                    winrt::Microsoft::UI::Xaml::Documents::LineBreak lb;
+                    tb.Inlines().Append(lb);
+                } else {
+                    StyleState nextStyle = styleStack.back();
+                    size_t classPos = tag.find(L"class=");
+                    if (classPos != std::wstring::npos) {
+                        size_t quoteStart = tag.find_first_of(L"\"'", classPos);
+                        if (quoteStart != std::wstring::npos) {
+                            size_t quoteEnd = tag.find_first_of(L"\"'", quoteStart + 1);
+                            if (quoteEnd != std::wstring::npos) {
+                                std::wstring className = tag.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+                                nextStyle.color = GetWoWColor(className);
+                            }
+                        }
+                    }
+                    
+                    if (tag.rfind(L"b", 0) == 0) {
+                        nextStyle.isBold = true;
+                    } else if (tag.rfind(L"small", 0) == 0) {
+                        nextStyle.isSmall = true;
+                    }
+                    
+                    styleStack.push_back(nextStyle);
+                }
+            } else {
+                size_t nextTag = inlineHtml.find(L'<', pos);
+                std::wstring text = (nextTag == std::wstring::npos) ? inlineHtml.substr(pos) : inlineHtml.substr(pos, nextTag - pos);
+                pos = (nextTag == std::wstring::npos) ? inlineHtml.size() : nextTag;
+                
+                text = std::regex_replace(text, std::wregex(L"&nbsp;"), L" ");
+                text = std::regex_replace(text, std::wregex(L"&gt;"), L">");
+                text = std::regex_replace(text, std::wregex(L"&lt;"), L"<");
+                text = std::regex_replace(text, std::wregex(L"&amp;"), L"&");
+                
+                if (!text.empty()) {
+                    winrt::Microsoft::UI::Xaml::Documents::Run run;
+                    run.Text(text);
+                    run.Foreground(SolidColorBrush(getActiveColor()));
+                    if (getActiveBold()) run.FontWeight(winrt::Microsoft::UI::Text::FontWeights::Bold());
+                    if (getActiveSmall()) {
+                        run.FontSize(10);
+                    } else {
+                        run.FontSize(12);
+                    }
+                    tb.Inlines().Append(run);
+                }
+            }
+        }
+        return tb;
+    }
+
+    // Extract inner content of all <td>/<th> cells within a <tr> block
+    static std::vector<std::wstring> ExtractTdContents(const std::wstring& rowHtml) {
+        std::vector<std::wstring> cells;
+        std::wregex tdRx(L"<t[dh][^>]*>([\\s\\S]*?)<\/t[dh]>", std::regex_constants::icase);
+        auto begin = std::wsregex_iterator(rowHtml.begin(), rowHtml.end(), tdRx);
+        auto end   = std::wsregex_iterator();
+        for (auto it = begin; it != end; ++it)
+            cells.push_back((*it)[1].str());
+        return cells;
+    }
+
+    static void ParseTooltipHtml(const std::wstring& html, StackPanel const& parentPanel) {
+        std::wregex trRx(L"<tr[^>]*>([\\s\\S]*?)<\/tr>", std::regex_constants::icase);
+        std::wregex brRx(L"<br\\s*/?>",              std::regex_constants::icase);
+        std::wregex commentRx(L"<!--[\\s\\S]*?-->",  std::regex_constants::icase);
+
+        // Emit one text segment as a TextBlock (strips comments, trims)
+        auto emitLine = [&](std::wstring line) {
+            line = std::regex_replace(line, commentRx, L"");
+            line = std::regex_replace(line, std::wregex(L"^\\s+|\\s+$"), L"");
+            if (!line.empty())
+                parentPanel.Children().Append(ParseInlineHtml(line));
+        };
+
+        // Split a text block on <br> and emit each segment
+        auto emitBrBlock = [&](const std::wstring& block) {
+            std::wsregex_token_iterator it(block.begin(), block.end(), brRx, -1);
+            std::wsregex_token_iterator itEnd;
+            for (; it != itEnd; ++it) emitLine(it->str());
+        };
+
+        size_t pos = 0;
+        auto trBegin = std::wsregex_iterator(html.begin(), html.end(), trRx);
+        auto trEnd   = std::wsregex_iterator();
+
+        for (auto it = trBegin; it != trEnd; ++it) {
+            // Emit bare text BEFORE this <tr>
+            size_t trStart = (size_t)it->position();
+            if (trStart > pos)
+                emitBrBlock(html.substr(pos, trStart - pos));
+
+            // Extract td/th cells from this row
+            std::wstring rowInner = (*it)[1].str();
+            auto cells = ExtractTdContents(rowInner);
+
+            if (cells.size() >= 2) {
+                // Two-column row (e.g. "172–259 Damage" | "Speed 1.80")
+                Grid grid;
+                grid.Margin({ 0, 1, 0, 1 });
+                ColumnDefinition col0, col1;
+                col0.Width({ 1, GridUnitType::Star });
+                col1.Width({ 1, GridUnitType::Auto });
+                grid.ColumnDefinitions().Append(col0);
+                grid.ColumnDefinitions().Append(col1);
+                TextBlock tbL = ParseInlineHtml(cells[0]);
+                tbL.HorizontalAlignment(HorizontalAlignment::Left);
+                Grid::SetColumn(tbL, 0);
+                grid.Children().Append(tbL);
+                TextBlock tbR = ParseInlineHtml(cells[1]);
+                tbR.HorizontalAlignment(HorizontalAlignment::Right);
+                Grid::SetColumn(tbR, 1);
+                grid.Children().Append(tbR);
+                parentPanel.Children().Append(grid);
+            } else if (cells.size() == 1) {
+                // Single-cell: recurse (handles nested tables + br-text inside the cell)
+                ParseTooltipHtml(cells[0], parentPanel);
+            } else {
+                // No cells found — emit raw row text
+                emitBrBlock(rowInner);
+            }
+
+            pos = trStart + (size_t)(*it)[0].length();
         }
 
-        auto tooltipBorder = Microsoft::UI::Xaml::Controls::Border();
-        tooltipBorder.Background(Microsoft::UI::Xaml::Media::SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(240, 10, 10, 15)));
-        tooltipBorder.BorderBrush(Microsoft::UI::Xaml::Media::SolidColorBrush(qualityColor));
+        // Emit bare text AFTER the last <tr>
+        if (pos < html.size())
+            emitBrBlock(html.substr(pos));
+    }
+
+
+    void MainWindow::AttachItemTooltip(Microsoft::UI::Xaml::FrameworkElement const& element, std::wstring const& itemName, std::wstring const& itemQuality, std::wstring const& itemRel)
+    {
+        winrt::Windows::UI::Color qualityColor = GetWoWColor(itemQuality);
+
+        // Build the tooltip content panel up-front
+        StackPanel panel;
+        panel.Spacing(3);
+        panel.MaxWidth(320);
+
+        // Show the item name immediately
+        TextBlock nameText;
+        nameText.Text(itemName.empty() ? L"Loading..." : winrt::hstring(itemName));
+        nameText.Foreground(SolidColorBrush(qualityColor));
+        nameText.FontSize(13);
+        nameText.FontWeight(winrt::Microsoft::UI::Text::FontWeights::Bold());
+        nameText.TextWrapping(TextWrapping::Wrap);
+        panel.Children().Append(nameText);
+
+        // Wrap in a styled border
+        Border tooltipBorder;
+        tooltipBorder.Background(SolidColorBrush(Microsoft::UI::ColorHelper::FromArgb(240, 8, 8, 12)));
+        tooltipBorder.BorderBrush(SolidColorBrush(qualityColor));
         tooltipBorder.BorderThickness(Microsoft::UI::Xaml::Thickness{ 1,1,1,1 });
         tooltipBorder.CornerRadius(Microsoft::UI::Xaml::CornerRadius{ 4,4,4,4 });
-        tooltipBorder.Padding(Microsoft::UI::Xaml::Thickness{ 10, 6, 10, 6 });
+        tooltipBorder.Padding(Microsoft::UI::Xaml::Thickness{ 12, 10, 12, 10 });
+        tooltipBorder.Child(panel);
 
-        auto tooltipText = Microsoft::UI::Xaml::Controls::TextBlock();
-        tooltipText.Text(itemName);
-        tooltipText.Foreground(Microsoft::UI::Xaml::Media::SolidColorBrush(qualityColor));
-        tooltipText.FontSize(12);
-        tooltipText.FontWeight(Microsoft::UI::Text::FontWeights::SemiBold());
+        // Attach via ToolTipService — uses WinUI's built-in hover mechanism
+        ToolTip tip;
+        tip.Content(tooltipBorder);
+        tip.Placement(Microsoft::UI::Xaml::Controls::Primitives::PlacementMode::Top);
+        tip.Background(SolidColorBrush(Microsoft::UI::Colors::Transparent()));
+        tip.BorderThickness(Microsoft::UI::Xaml::Thickness{ 0,0,0,0 });
+        tip.Padding(Microsoft::UI::Xaml::Thickness{ 0,0,0,0 });
+        ToolTipService::SetToolTip(element, tip);
 
-        tooltipBorder.Child(tooltipText);
-        m_itemTooltipFlyout.Content(tooltipBorder);
+        // On first hover, trigger async fetch to fill rich content
+        if (!itemRel.empty()) {
+            auto self = get_strong();
+            element.PointerEntered([this, self, panel, itemRel, qualityColor](auto const&, auto const&) mutable {
+                FetchAndUpdateTooltip(panel, itemRel);
+            });
+        }
+    }
 
-        // Show/hide flyout with delay on pointer enter/exit
-        auto self = get_strong();
-        element.PointerEntered([this, self, element](auto const&, winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const&) mutable {
-            // Cancel any pending hide
-            if (m_tooltipDelayTimer)
-                m_tooltipDelayTimer.Stop();
+    winrt::fire_and_forget MainWindow::FetchAndUpdateTooltip(StackPanel panel, std::wstring itemRel)
+    {
+        auto lifetime = get_strong();
 
-            // Show after a short delay to avoid flicker
-            if (!m_tooltipDelayTimer)
-            {
-                m_tooltipDelayTimer = Microsoft::UI::Xaml::DispatcherTimer();
-                m_tooltipDelayTimer.Interval(std::chrono::milliseconds(200));
-                m_tooltipDelayTimer.Tick([this, self, element](auto const&, auto const&) mutable {
-                    if (m_itemTooltipFlyout)
-                        m_itemTooltipFlyout.ShowAt(element);
-                    if (m_tooltipDelayTimer)
-                        m_tooltipDelayTimer.Stop();
-                });
+        // Already have cached html?
+        auto it = m_tooltipCache.find(itemRel);
+        if (it != m_tooltipCache.end() && !it->second.empty()) {
+            // Repopulate panel with rich content
+            panel.Children().Clear();
+            ParseTooltipHtml(it->second, panel);
+            co_return;
+        }
+
+        // Fetch from cavernoftime
+        try {
+            winrt::Windows::Web::Http::HttpClient client;
+            client.DefaultRequestHeaders().UserAgent().TryParseAdd(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+
+            std::wstring url = L"http://wotlk.cavernoftime.com/" + itemRel + L"&power=true";
+            auto uri = winrt::Windows::Foundation::Uri(url);
+            auto response = co_await client.GetStringAsync(uri);
+
+            std::wstring jsResponse = response.c_str();
+            std::wstring html = ExtractTooltipHtml(jsResponse);
+
+            if (!html.empty()) {
+                m_tooltipCache[itemRel] = html;
+
+                // Update panel on UI thread (co_await already resumes on UI thread for fire_and_forget)
+                panel.Children().Clear();
+                ParseTooltipHtml(html, panel);
             }
-            m_tooltipDelayTimer.Start();
-        });
-
-        element.PointerExited([this, self](auto const&, winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const&) mutable {
-            // Hide tooltip on exit
-            if (m_tooltipDelayTimer)
-                m_tooltipDelayTimer.Stop();
-            if (m_itemTooltipFlyout)
-                m_itemTooltipFlyout.Hide();
-        });
+        } catch (...) {}
     }
 
     void MainWindow::UpdateArmoryUI(winrt::hstring const& wjsonStr)
@@ -855,6 +1192,7 @@ namespace winrt::wallmane::implementation
                             std::wstring src = itemObj.GetNamedString(L"img", L"").c_str();
                             std::wstring itemName = itemObj.GetNamedString(L"name", L"").c_str();
                             std::wstring itemQuality = itemObj.GetNamedString(L"quality", L"").c_str();
+                            std::wstring itemRel = itemObj.GetNamedString(L"rel", L"").c_str();
 
                             Border slot;
                             slot.Width(40); slot.Height(40);
@@ -872,8 +1210,8 @@ namespace winrt::wallmane::implementation
                                 slot.Child(rect);
                             }
 
-                            // Attach tooltip with item name and quality
-                            AttachItemTooltip(slot, itemName, itemQuality);
+                            // Attach tooltip with item name, quality, and rel
+                            AttachItemTooltip(slot, itemName, itemQuality, itemRel);
 
                             panel.Children().Append(slot);
                         }
@@ -882,6 +1220,19 @@ namespace winrt::wallmane::implementation
                     fillPanel(LeftGearPanel(), root.GetNamedArray(L"leftItems", winrt::Windows::Data::Json::JsonArray{}));
                     fillPanel(RightGearPanel(), root.GetNamedArray(L"rightItems", winrt::Windows::Data::Json::JsonArray{}));
                     fillPanel(BottomGearPanel(), root.GetNamedArray(L"bottomItems", winrt::Windows::Data::Json::JsonArray{}));
+
+                    // Pre-fetch all item tooltips in background so hovering is instant
+                    for (auto const& key : { L"leftItems", L"rightItems", L"bottomItems" }) {
+                        auto arr = root.GetNamedArray(key, winrt::Windows::Data::Json::JsonArray{});
+                        for (uint32_t i = 0; i < arr.Size(); i++) {
+                            auto itemObj = arr.GetObjectAt(i);
+                            std::wstring rel = itemObj.GetNamedString(L"rel", L"").c_str();
+                            if (!rel.empty() && m_tooltipCache.find(rel) == m_tooltipCache.end()) {
+                                StackPanel dummy;
+                                FetchAndUpdateTooltip(dummy, rel);
+                            }
+                        }
+                    }
 
                     auto statsPairs = root.GetNamedArray(L"statsPairs");
                     StatsCol0().Children().Clear();
@@ -966,7 +1317,7 @@ namespace winrt::wallmane::implementation
                         for (var i = 0; i < slots.length; i++) {
                             var img = slots[i].querySelector('img');
                             var link = slots[i].querySelector('a');
-                            var itemData = { img: '', name: '', quality: '' };
+                            var itemData = { img: '', name: '', quality: '', rel: '' };
 
                             if (img) itemData.img = img.src;
 
@@ -976,6 +1327,16 @@ namespace winrt::wallmane::implementation
                                                 link.getAttribute('title') || 
                                                 link.textContent.trim();
                                 itemData.quality = link.getAttribute('data-quality') || '';
+                                
+                                var rel = link.getAttribute('rel') || '';
+                                if (!rel) {
+                                    var href = link.getAttribute('href') || '';
+                                    var idMatch = href.match(/item=(\d+)/) || href.match(/\/item\/(\d+)/);
+                                    if (idMatch) {
+                                        rel = 'item=' + idMatch[1];
+                                    }
+                                }
+                                itemData.rel = rel;
                             }
 
                             // Fallback: try to extract from img alt or title

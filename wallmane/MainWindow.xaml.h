@@ -42,8 +42,7 @@ namespace winrt::wallmane::implementation
     private:
         Microsoft::UI::Xaml::DispatcherTimer m_lightningTimer{ nullptr };
         int m_lightningCountdown = 0;
-        Microsoft::UI::Xaml::Controls::Flyout m_itemTooltipFlyout{ nullptr };
-        Microsoft::UI::Xaml::DispatcherTimer m_tooltipDelayTimer{ nullptr };
+        std::map<std::wstring, std::wstring> m_tooltipCache;
 
         void SetupCustomTitleBar();
         void StartAnimations();
@@ -52,7 +51,8 @@ namespace winrt::wallmane::implementation
         void TriggerLightningFlash();
 
         // Tooltip helper for gear items
-        void AttachItemTooltip(Microsoft::UI::Xaml::FrameworkElement const& element, std::wstring const& itemName, std::wstring const& itemQuality);
+        void AttachItemTooltip(Microsoft::UI::Xaml::FrameworkElement const& element, std::wstring const& itemName, std::wstring const& itemQuality, std::wstring const& itemRel);
+        winrt::fire_and_forget FetchAndUpdateTooltip(Microsoft::UI::Xaml::Controls::StackPanel panel, std::wstring itemRel);
     };
 }
 
