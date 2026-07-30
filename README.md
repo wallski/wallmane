@@ -1,77 +1,110 @@
 # Wallmane
 
-A custom launcher for Warmane's WotLK 3.3.5a private server. Built with WinUI 3 and C++/WinRT.
+Wallmane is a modern, high-performance desktop launcher for Warmane's World of Warcraft: Wrath of the Lich King (3.3.5a) server. Built natively with WinUI 3 and C++/WinRT, it offers a fast, low-footprint experience with real-time server statistics, character armory inspection, automated addon management, and custom client configuration.
 
 ---
 
-## What it does
+## Overview
 
-Wallmane replaces the default process of manually navigating to your WoW folder every time you want to play. It sits as a persistent launcher with a dark, atmospheric interface — real-time server status, news from Warmane, one-click addon installs, and Discord Rich Presence when you're in game.
+<p align="center">
+  <img src="pics/4.png" alt="Wallmane Launcher Home" width="100%" />
+</p>
+
+Wallmane streamlines launcher operations while integrating deep live data from Warmane. It combines custom native rendering with web scraping and API integrations to bring server news, realm populations, live character armory view, and addon management into a single unified workspace.
 
 ---
 
-## Features
+## Feature Showcase
 
-**Home**
-- Live realm status pulled directly from Warmane (Onyxia, Lordaeron, Icecrown, Blackrock)
-- Latest news and patch announcements from warmane.com
-- One-click Play button that launches Wow.exe from your saved path
+### Live Armory & Interactive 3D Inspection
 
-**Addons**
-- Curated list of essential WotLK 3.3.5a addons installed with a single click
-- Automatically detects what you already have installed
-- Downloads from verified sources and extracts directly into your Interface/AddOns folder
-  - pfQuest, Deadly Boss Mods (Warmane fork), Recount, ElvUI, OmniCC
+<p align="center">
+  <img src="pics/1.png" alt="Wallmane Armory View" width="100%" />
+</p>
 
-**Settings**
-- Browse and save your Wow.exe path — persists between sessions
-- One-click cache cleaner
-- HD character model patch installer (WoD models backported to 3.3.5a)
-- Option to minimize the launcher when the game starts
-- WotLK 3.3.5a torrent magnet link
+- Inspect all characters associated with your account accounts and WTF data.
+- Real-time 3D character model viewer with interactive controls.
+- Full gear slot overview with rich, colored in-game style item tooltips fetched live from database sources.
+- Complete breakdown of combat stats, attributes, ratings, and active specialization talent trees.
 
-**Discord Rich Presence**
-- Automatically connects to Discord when the launcher starts
-- Updates your status to show you're playing WotLK on Warmane when you hit Play
+---
 
-**Visuals**
-- Atmospheric dark theme with gold accents
-- Native GPU-accelerated rain and lightning animation (no WebView, no video files)
-- Custom dark titlebar — no white Windows chrome
-- Custom app icon
+### Addon Management & Discovery
+
+<p align="center">
+  <img src="pics/3.png" alt="Addons Discovery" width="48%" />
+  <img src="pics/2.png" alt="Addons Installed" width="48%" />
+</p>
+
+- **Discover**: Search and install popular WotLK 3.3.5a addons with one click directly from verified archives.
+- **Installed**: Automatically scans your `Interface/AddOns` folder to detect, list, and remove installed addons.
+- Background downloading and automated extraction into the correct directories.
+
+---
+
+### Configuration & Realmlist Swapping
+
+<p align="center">
+  <img src="pics/5.png" alt="Wallmane Settings" width="100%" />
+</p>
+
+- **Game Path Detector**: Remembers and validates your `Wow.exe` directory.
+- **Realmlist Manager**: Switch realmlists instantly with automatic WTF backup and profile preservation.
+- **Playtime Tracker**: Automatically calculates total time played across all characters using local WTF save logs (`DataStore_Characters`).
+- **Maintenance Utility**: One-click WoW cache clearer to resolve common client display and data sync bugs.
+- **Client Acquisition**: Built-in magnet link generator for downloading the WotLK 3.3.5a client.
+
+---
+
+## Core Features
+
+- **Native Windows Desktop UI**: Built with WinUI 3, Windows App SDK, and C++/WinRT for zero-lag rendering and low memory footprint.
+- **Atmospheric Design**: Modern dark theme with custom GPU-accelerated DirectComposition rain and lightning visual effects.
+- **Real-Time Realm Status**: Live online player counts for Onyxia, Lordaeron, Icecrown, and Blackrock.
+- **Warmane News Feed**: Latest server updates and maintenance alerts directly on the dashboard.
+- **Discord Rich Presence**: Custom status integration displaying current game state and realm activity.
+- **Tray & Launch Options**: Configurable auto-minimize behavior upon launching the game client.
 
 ---
 
 ## Requirements
 
-- Windows 10 (build 17763) or later
-- Windows App Runtime 2.0
-- Your own WotLK 3.3.5a client (Wow.exe)
+- **Operating System**: Windows 10 (Build 17763) or Windows 11
+- **Runtime**: Windows App Runtime 1.4+ / 2.0
+- **Client**: World of Warcraft 3.3.5a (WotLK) executable
 
 ---
 
-## Building
+## Building from Source
 
-Requires Visual Studio 2022 with the following workloads:
-- Desktop development with C++
-- Windows application development (WinUI 3 / Windows App SDK)
+### Prerequisites
 
+1. Visual Studio 2022 (v17.0 or higher)
+2. Workloads:
+   - Desktop development with C++
+   - Universal Windows Platform development / WinUI 3 templates
+3. C++/WinRT Extension for Visual Studio
 
-Open `wallmane.slnx` in Visual Studio, set the configuration to `Debug x64`, and hit F5.
+### Build Instructions
 
-On first build, Visual Studio will restore NuGet packages automatically including the Windows App Runtime.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/wallski/wallmane.git
+   ```
+2. Open `wallmane.slnx` (or `wallmane.sln`) in Visual Studio 2022.
+3. Select `Debug` or `Release` configuration and `x64` platform.
+4. Build and run the solution (`F5`). NuGet dependencies will be automatically restored on first compile.
 
 ---
 
-## Notes
+## Technical Notes
 
-- The addon installer uses Windows' built-in `tar.exe` (available since Windows 10 build 17063) to extract downloads. No third-party dependencies.
-- Passwords or account credentials are never stored — the launcher does not interact with Warmane's authentication system.
-- The HD patch installer requires a direct `.mpq` download link. The placeholder URL in the source needs to be replaced with a link from the Warmane forums before that feature works.
-- Discord Rich Presence connects over a local named pipe. It silently does nothing if Discord is not running.
+- **Addon Extraction**: Built using Windows native `tar.exe` for zero external dependencies.
+- **Security & Privacy**: No login credentials or account passwords are required or stored.
+- **PCH Compilation**: Large WinRT header dependencies utilize precompiled headers with `/Zm300` heap allocation options.
 
 ---
 
 ## License
 
-MIT
+This project is released under the MIT License.
